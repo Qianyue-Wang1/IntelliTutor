@@ -1,0 +1,10 @@
+@use '@/styles/theme.scss' as *;
+
+$uni-color-primary: $primary;
+$uni-color-success: $success;
+$uni-color-warning: $warning;
+$uni-color-error: $danger;
+$uni-text-color: $text-primary;
+$uni-text-color-grey: $text-secondary;
+$uni-bg-color-grey: $page-bg;
+$uni-border-color: $border;

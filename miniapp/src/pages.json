@@ -1,0 +1,123 @@
+{
+  "pages": [
+    {
+      "path": "pages/launch/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/auth/login",
+      "style": { "navigationBarTitleText": "登录" }
+    },
+    {
+      "path": "pages/auth/register",
+      "style": { "navigationBarTitleText": "注册" }
+    },
+    {
+      "path": "pages/auth/forgot-password",
+      "style": { "navigationBarTitleText": "忘记密码" }
+    },
+    {
+      "path": "pages/question/index",
+      "style": { "navigationBarTitleText": "智能提问" }
+    },
+    {
+      "path": "pages/history/index",
+      "style": {
+        "navigationBarTitleText": "学习记录",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": { "navigationBarTitleText": "我的" }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages-session",
+      "pages": [
+        {
+          "path": "explanation/index",
+          "style": { "navigationBarTitleText": "分步讲解" }
+        },
+        {
+          "path": "discussion/index",
+          "style": { "navigationBarTitleText": "启发研讨" }
+        }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/question/index": {
+      "network": "all",
+      "packages": ["pages-session"]
+    }
+  },
+  "tabBar": {
+    "color": "#657278",
+    "selectedColor": "#245f59",
+    "backgroundColor": "#fffefb",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/question/index",
+        "text": "提问",
+        "iconPath": "static/tabbar/question.png",
+        "selectedIconPath": "static/tabbar/question-active.png"
+      },
+      {
+        "pagePath": "pages/history/index",
+        "text": "历史",
+        "iconPath": "static/tabbar/history.png",
+        "selectedIconPath": "static/tabbar/history-active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "static/tabbar/profile.png",
+        "selectedIconPath": "static/tabbar/profile-active.png"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "IntelliTutor",
+    "navigationBarBackgroundColor": "#fffefb",
+    "backgroundColor": "#f3f2ed"
+  },
+	"condition": {
+	  "current": 2,
+	  "list": [
+	    {
+	      "name": "启动页",
+	      "path": "pages/launch/index",
+	      "query": ""
+	    },
+	    {
+	      "name": "登录页",
+	      "path": "pages/auth/login",
+	      "query": ""
+	    },
+	    {
+	      "name": "忘记密码",
+	      "path": "pages/auth/forgot-password",
+	      "query": ""
+	    },
+	    {
+	      "name": "智能提问",
+	      "path": "pages/question/index",
+	      "query": ""
+	    },
+	    {
+	      "name": "分步讲解",
+	      "path": "pages-session/explanation/index",
+	      "query": ""
+	    },
+	    {
+	      "name": "启发研讨",
+	      "path": "pages-session/discussion/index",
+	      "query": ""
+	    }
+	  ]
+	}
+}
