@@ -1,0 +1,57 @@
+{$SITE_ADDRESS::80} {
+    encode zstd gzip
+
+    log {
+        output stdout
+        format console
+    }
+
+    request_body {
+        max_size 25MB
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+    }
+
+    handle /healthz {
+        respond "ok" 200
+    }
+
+    handle /api/* {
+        reverse_proxy backend:8090 {
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 12m
+            }
+        }
+    }
+
+    @h5_root path /h5
+    redir @h5_root /h5/ 308
+
+    handle_path /h5/* {
+        root * /srv/miniapp
+        try_files {path} /index.html
+        file_server
+    }
+
+    @assets path /assets/*
+    handle @assets {
+        root * /srv/frontend
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+
+    handle {
+        root * /srv/frontend
+        header Cache-Control "no-store"
+        try_files {path} /index.html
+        file_server
+    }
+}
+

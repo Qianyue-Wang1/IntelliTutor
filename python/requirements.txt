@@ -1,0 +1,15 @@
+
+
+neo4j==5.28.2
+requests==2.32.3
+httpx==0.28.1
+fastapi==0.110.0
+pydantic==2.11.7
+uvicorn==0.35.0
+pandas==2.2.2
+openai
+numpy==1.26.4
+loguru==0.7.3
+scikit-learn==1.5.1
+tqdm==4.66.5
+python-dotenv==0.21.0

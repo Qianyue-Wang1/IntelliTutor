@@ -1,0 +1,17 @@
+.env
+.vscode
+__pycache__
+**/__pycache__
+*.pyc
+compare
+datasets
+eval
+test
+logs
+output
+data
+KT/dialog-kt
+KT/llm-kt
+temp.txt
+main.py
+requirement.txt

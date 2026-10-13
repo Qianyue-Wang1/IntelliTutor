@@ -1,0 +1,265 @@
+name: intellitutor
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "timezone=${TZ:-Asia/Shanghai}"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      PGTZ: ${TZ:-Asia/Shanghai}
+      POSTGRES_DB: ${POSTGRES_DB:-intellitutor}
+      POSTGRES_USER: ${POSTGRES_USER:-intellitutor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-intellitutor}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks: [internal]
+    logging: *default-logging
+
+  neo4j:
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -a bolt://127.0.0.1:7687 -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    networks: [internal]
+    logging: *default-logging
+
+  neo4j-init:
+    build:
+      context: ./python
+    command: ["python", "config/neo4j-init.py"]
+    restart: "no"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
+      NEO4J_DATABASE: neo4j
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks: [internal]
+    logging: *default-logging
+
+  python:
+    build:
+      context: ./python
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      PYTHON_HOST: 0.0.0.0
+      PYTHON_PORT: 8000
+      NEO4J_URI: neo4j://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
+      NEO4J_DATABASE: neo4j
+      OPENROUTER_API_URL: ${OPENROUTER_API_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL_INSTRUCT: ${OPENROUTER_MODEL_INSTRUCT:-}
+      OPENROUTER_MODEL_LARGE: ${OPENROUTER_MODEL_LARGE:-}
+      OPENROUTER_MODEL_SMALL: ${OPENROUTER_MODEL_SMALL:-}
+      OPENROUTER_MODEL_VL: ${OPENROUTER_MODEL_VL:-}
+      OPENROUTER_MODEL_VLFAST: ${OPENROUTER_MODEL_VLFAST:-}
+      OPENROUTER_MODEL_REASONING: ${OPENROUTER_MODEL_REASONING:-}
+      MODELSCOPE_API_URL: ${MODELSCOPE_API_URL:-}
+      MODELSCOPE_API_KEY: ${MODELSCOPE_API_KEY:-}
+      MODELSCOPE_MODEL_INSTRUCT: ${MODELSCOPE_MODEL_INSTRUCT:-}
+      MODELSCOPE_MODEL_LARGE: ${MODELSCOPE_MODEL_LARGE:-}
+      MODELSCOPE_MODEL_SMALL: ${MODELSCOPE_MODEL_SMALL:-}
+      MODELSCOPE_MODEL_VL: ${MODELSCOPE_MODEL_VL:-}
+      MODELSCOPE_MODEL_VLFAST: ${MODELSCOPE_MODEL_VLFAST:-}
+      MODELSCOPE_MODEL_REASONING: ${MODELSCOPE_MODEL_REASONING:-}
+      QWEN_API_URL: ${QWEN_API_URL:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_MODEL_INSTRUCT: ${QWEN_MODEL_INSTRUCT:-}
+      QWEN_MODEL_LARGE: ${QWEN_MODEL_LARGE:-}
+      QWEN_MODEL_SMALL: ${QWEN_MODEL_SMALL:-}
+      QWEN_MODEL_VL: ${QWEN_MODEL_VL:-}
+      QWEN_MODEL_VLFAST: ${QWEN_MODEL_VLFAST:-}
+      QWEN_MODEL_REASONING: ${QWEN_MODEL_REASONING:-}
+      SILICON_API_URL: ${SILICON_API_URL:-}
+      SILICON_API_KEY: ${SILICON_API_KEY:-}
+      SILICON_MODEL_INSTRUCT: ${SILICON_MODEL_INSTRUCT:-}
+      SILICON_MODEL_LARGE: ${SILICON_MODEL_LARGE:-}
+      SILICON_MODEL_SMALL: ${SILICON_MODEL_SMALL:-}
+      SILICON_MODEL_VL: ${SILICON_MODEL_VL:-}
+      SILICON_MODEL_VLFAST: ${SILICON_MODEL_VLFAST:-}
+      SILICON_MODEL_REASONING: ${SILICON_MODEL_REASONING:-}
+      CEREBRAS_API_URL: ${CEREBRAS_API_URL:-}
+      CEREBRAS_API_KEY1: ${CEREBRAS_API_KEY1:-}
+      CEREBRAS_API_KEY2: ${CEREBRAS_API_KEY2:-}
+      CEREBRAS_MODEL_INSTRUCT: ${CEREBRAS_MODEL_INSTRUCT:-}
+    volumes:
+      - python_data:/app/data
+      - python_output:/app/output
+      - python_logs:/app/logs
+      - type: bind
+        source: ${MODEL_DIR:-./models}
+        target: /models
+        read_only: true
+    depends_on:
+      neo4j-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - egress
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      APP_TIME_ZONE: ${TZ:-Asia/Shanghai}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-intellitutor}
+      EXPERIMENT_MODE: ${EXPERIMENT_MODE:-false}
+      EXPERIMENT_ADMIN_ACCOUNT: ${EXPERIMENT_ADMIN_ACCOUNT:-}
+      EXPERIMENT_ADMIN_PASSWORD: ${EXPERIMENT_ADMIN_PASSWORD:-}
+      EXPERIMENT_INACTIVITY_MINUTES: ${EXPERIMENT_INACTIVITY_MINUTES:-10}
+      DB_USERNAME: ${POSTGRES_USER:-intellitutor}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-intellitutor}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
+      PYTHON_INFERENCE_URL: http://python:8000
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN must be set}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-smtp.qq.com}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@localhost}
+      ALIYUN_DYPNS_ENABLED: ${ALIYUN_DYPNS_ENABLED:-false}
+      ALIYUN_DYPNS_ENDPOINT: ${ALIYUN_DYPNS_ENDPOINT:-dypnsapi.aliyuncs.com}
+      ALIYUN_DYPNS_REGION: ${ALIYUN_DYPNS_REGION:-cn-shenzhen}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_DYPNS_SIGN_NAME: ${ALIYUN_DYPNS_SIGN_NAME:-}
+      ALIYUN_DYPNS_TEMPLATE_CODE: ${ALIYUN_DYPNS_TEMPLATE_CODE:-}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      IMAGE_INPUT_ENABLED: ${IMAGE_INPUT_ENABLED:-false}
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Duser.timezone=${TZ:-Asia/Shanghai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      python:
+        condition: service_healthy
+    networks:
+      - internal
+      - egress
+    logging: *default-logging
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web/Dockerfile
+      args:
+        MINIAPP_API_BASE_URL: /api
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS must be set}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - public
+      - internal
+    logging: *default-logging
+
+networks:
+  public:
+  egress:
+  internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  neo4j_data:
+  neo4j_logs:
+  python_data:
+  python_output:
+  python_logs:
+  caddy_data:
+  caddy_config:

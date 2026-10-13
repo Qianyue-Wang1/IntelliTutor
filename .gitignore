@@ -1,0 +1,82 @@
+.env
+.pnpm-store/
+models/
+backups/
+
+# 模型权重
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+
+python/KT/dialog-kt/src/dialogue-kt-main/saved_models/
+
+# 训练与标注数据
+python/KT/dialog-kt/src/dialogue-kt-main/data/annotated/
+python/KT/dialog-kt/src/dialogue-kt-main/data/raw/
+python/KT/dialog-kt/src/dialogue-kt-main/openai_cache_*.json
+python/datasets/
+
+# 实验与运行产物
+python/test/
+python/eval/
+python/output/
+python/logs/
+
+# 运行时用户数据
+python/data/user/
+python/data/old/
+python/data/lora_adapters/
+
+# 本地配置
+.env
+.env.*
+!.env.example
+python/.env
+python/.env.production
+
+# 构建产物
+**/node_modules/
+**/dist/
+**/target/
+.pnpm-store/
+models/
+backups/
+
+# 本地开发工具、构建日志与临时数据库
+.agents/
+.codex/
+.codex_tmp/
+.superpowers/
+.idea/
+.vscode/
+**/__pycache__/
+*.py[cod]
+build.log
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# 不应随源码公开的本地参与者导出与支持材料
+participant-exports/
+exports/
+downloads/
+experiment-record-*.xlsx
+assessment-results.csv
+tutor-runs.csv
+experiment-events.jsonl
+
+# 离线研究过程中的模型响应缓存不属于运行源码
+**/openai_cache_*.json
+
+# 参与者本地部署不需要的旧端、研究交付物与内部工作记录
+deliverables/
+frontend/
+scripts/
+docs/*
+!docs/本地部署手册.md
+!docs/阿里云百炼API-Key申请与配置指南.md
+python/KT/dialog-kt/
+python/KT/llm-kt/
+python/KT/knowledge_tracing.py

@@ -1,0 +1,7 @@
+查询所有knowledge graph命令：
+MATCH p=(d:Domain)-[:HAS_TOPIC]->(t:Topic)-[:HAS_SUB_TOPIC]->(st:SubTopic)-[:HAS_KNOWLEDGE_POINT]->(kp:KnowledgePoint)
+RETURN p
+
+删除所有knowledge graph命令：
+MATCH (n)
+DETACH DELETE n

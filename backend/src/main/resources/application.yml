@@ -1,0 +1,164 @@
+server:
+  port: 8090
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: intellitutor-backend
+
+  # ===== 数据源 (PostgreSQL) =====
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/intellitutor}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 600000
+      connection-timeout: 30000
+      # Apply the configured display timezone to every JDBC session, including
+      # databases whose data volume was initialized before TZ was configured.
+      connection-init-sql: SET TIME ZONE '${APP_TIME_ZONE:Asia/Shanghai}'
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 2
+
+  # ===== Redis =====
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: -1ms
+
+  # ===== Jackson =====
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+    # Keep database instants authoritative while serializing human-facing dates
+    # in the configured deployment timezone.
+    time-zone: ${APP_TIME_ZONE:Asia/Shanghai}
+    serialization:
+      write-dates-with-context-time-zone: true
+
+  # ===== Spring Mail (QQ 邮箱 SMTP) =====
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:3184955388@qq.com}
+    password: ${MAIL_PASSWORD:gknushrvdmohdgab}
+    protocol: smtps
+    properties:
+      mail:
+        smtps:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
+          timeout: 10000
+          connectiontimeout: 10000
+          writetimeout: 10000
+
+  # ===== RabbitMQ =====
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    # 消息发送确认（Publisher Confirm）
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: manual           # 手动 ACK，保证消息不丢失
+        prefetch: 5                        # 每次预取 5 条，流量控制
+        retry:
+          enabled: true
+          initial-interval: 3000ms
+          max-attempts: 3
+          multiplier: 2
+
+# ===== MyBatis-Plus =====
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.intellitutor.scut.modules.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ===== JWT =====
+intellitutor:
+  jwt:
+    # 生产和本地运行都必须显式提供至少 32 字节的随机密钥，禁止使用仓库内默认值。
+    secret: ${JWT_SECRET:7355c4165bb1022374f04f0311a29b9be918a06b83a0bf2369d1537096c30e50}
+    expire-minutes: 1440   # 24 h
+    token-header: Authorization
+    token-prefix: "Bearer "
+  # Python 推理端基础 URL（由 TaskService 调用）
+  python:
+    inference-base-url: ${PYTHON_INFERENCE_URL:http://localhost:8000}
+    connect-timeout-ms: 5000
+    # Python 长任务最多允许 10 分钟；Java 额外预留 2 分钟用于响应传输与收尾。
+    read-timeout-ms: 720000
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}
+
+  features:
+    # Runtime capability flag. This is intentionally disabled by default so a
+    # deployment without a configured vision model remains text-only.
+    image-input-enabled: ${IMAGE_INPUT_ENABLED:false}
+    # Formal-study switch. When true, pre-created experiment accounts are
+    # governed by the server-side experiment state machine.
+    experiment-mode-enabled: ${EXPERIMENT_MODE:false}
+
+  experiment:
+    inactivity-minutes: ${EXPERIMENT_INACTIVITY_MINUTES:10}
+    event-batch-size: ${EXPERIMENT_EVENT_BATCH_SIZE:100}
+    event-payload-bytes: ${EXPERIMENT_EVENT_PAYLOAD_BYTES:16384}
+    admin-account: ${EXPERIMENT_ADMIN_ACCOUNT:}
+    admin-password: ${EXPERIMENT_ADMIN_PASSWORD:}
+
+  # Aliyun Dypnsapi SMS verify code
+  aliyun:
+    dypns:
+      enabled: ${ALIYUN_DYPNS_ENABLED:false}
+      endpoint: ${ALIYUN_DYPNS_ENDPOINT:dypnsapi.aliyuncs.com}
+      region: ${ALIYUN_DYPNS_REGION:cn-shenzhen}
+      access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_DYPNS_SIGN_NAME:}
+      template-code: ${ALIYUN_DYPNS_TEMPLATE_CODE:}
+      code-length: 6
+      code-ttl-minutes: 5
+
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    from: ${MAIL_FROM:3184955388@qq.com}
+    subject-prefix: "[IntelliTutor]"
+
+# ===== 日志 =====
+logging:
+  level:
+    com.intellitutor.scut: ${APP_LOG_LEVEL:INFO}
+    org.springframework.amqp: INFO

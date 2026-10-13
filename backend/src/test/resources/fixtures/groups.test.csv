@@ -1,0 +1,5 @@
+student_id,login_account,group_code
+fixture-001,,DIRECT_LLM
+fixture-002,,BASIC_TUTOR
+fixture-003,,FULL_TUTOR
+fixture-004,,BLANK_CONTROL

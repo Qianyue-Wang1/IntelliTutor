@@ -1,0 +1,53 @@
+{
+  "code": "TEST_FIXTURE_ONLY",
+  "name": "Human experiment integration fixture (not formal material)",
+  "config_version": "test-1",
+  "dry_run": false,
+  "questions": [
+    { "code": "PRE_Q1", "type": "SINGLE_CHOICE", "prompt": "测试夹具题：1 + 1 = ?", "options": ["1", "2", "3", "4"], "answer_key": "B", "metadata": { "fixture_only": true } },
+    { "code": "R1_Q1", "type": "SINGLE_CHOICE", "prompt": "测试夹具题：下列哪个数是偶数？", "options": { "A": "1", "B": "2", "C": "3", "D": "5" }, "answer_key": "B", "metadata": { "fixture_only": true } },
+    { "code": "R2_Q1", "type": "SINGLE_CHOICE", "prompt": "测试夹具题：3 × 3 = ?", "options": { "A": "6", "B": "8", "C": "9", "D": "12" }, "answer_key": "C", "metadata": { "fixture_only": true } },
+    { "code": "R3_Q1", "type": "SINGLE_CHOICE", "prompt": "测试夹具题：5 - 2 = ?", "options": ["2", "3", "4", "5"], "answer_key": "B", "metadata": { "fixture_only": true } },
+    { "code": "POST_Q1", "type": "SINGLE_CHOICE", "prompt": "测试夹具题：2 + 3 = ?", "options": ["4", "5", "6", "7"], "answer_key": "B", "metadata": { "fixture_only": true } },
+    { "code": "SURVEY_Q1", "type": "LIKERT", "prompt": "测试夹具题：我能够顺利使用本系统。", "options": { "1": "非常不同意", "2": "不同意", "3": "一般", "4": "同意", "5": "非常同意" }, "metadata": { "fixture_only": true } },
+    { "code": "TUTOR_Q1", "type": "TUTOR", "prompt": "测试夹具 Tutor 题：请说明一元一次方程 2x + 1 = 5 的解法。", "metadata": { "fixture_only": true } }
+  ],
+  "assessments": [
+    { "code": "PRETEST_FIXTURE", "type": "PRETEST", "title": "Pretest 测试夹具", "duration_seconds": 600, "questions": [{ "question_code": "PRE_Q1", "sequence_no": 1, "points": 1 }] },
+    { "code": "ROUND_1_QUIZ_FIXTURE", "type": "QUIZ", "title": "Round 1 Quiz 测试夹具", "duration_seconds": 600, "questions": [{ "question_code": "R1_Q1", "sequence_no": 1, "points": 1 }] },
+    { "code": "ROUND_2_QUIZ_FIXTURE", "type": "QUIZ", "title": "Round 2 Quiz 测试夹具", "duration_seconds": 600, "questions": [{ "question_code": "R2_Q1", "sequence_no": 1, "points": 1 }] },
+    { "code": "ROUND_3_QUIZ_FIXTURE", "type": "QUIZ", "title": "Round 3 Quiz 测试夹具", "duration_seconds": 600, "questions": [{ "question_code": "R3_Q1", "sequence_no": 1, "points": 1 }] },
+    { "code": "POSTTEST_FIXTURE", "type": "POSTTEST", "title": "Posttest 测试夹具", "duration_seconds": 600, "questions": [{ "question_code": "POST_Q1", "sequence_no": 1, "points": 1 }] },
+    { "code": "QUESTIONNAIRE_FIXTURE", "type": "QUESTIONNAIRE", "title": "使用问卷测试夹具", "questions": [{ "question_code": "SURVEY_Q1", "sequence_no": 1, "points": 1 }] }
+  ],
+  "stages": [
+    { "code": "SETUP", "type": "CONTROL", "sequence_no": 1, "title": "Setup" },
+    { "code": "LECTURE", "type": "LECTURE", "sequence_no": 2, "title": "知识讲义测试夹具", "lecture_markdown": "# 测试夹具讲义\n\n此内容只用于集成测试，不是正式实验材料。" },
+    { "code": "PRETEST", "type": "ASSESSMENT", "sequence_no": 3, "title": "Pretest", "assessment_code": "PRETEST_FIXTURE" },
+    { "code": "GROUP_ASSIGNMENT", "type": "CONTROL", "sequence_no": 4, "title": "Group Assignment" },
+    { "code": "ROUND_1_TUTOR", "type": "TUTOR", "sequence_no": 5, "round": 1, "title": "Round 1 Tutor", "groups": [
+      { "group_code": "DIRECT_LLM", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "DIRECT" },
+      { "group_code": "BASIC_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "FULL_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "BLANK_CONTROL", "participating": false, "mode_policy": "SKIP" }
+    ] },
+    { "code": "ROUND_1_QUIZ", "type": "ASSESSMENT", "sequence_no": 6, "round": 1, "title": "Round 1 Quiz", "assessment_code": "ROUND_1_QUIZ_FIXTURE" },
+    { "code": "ROUND_2_TUTOR", "type": "TUTOR", "sequence_no": 7, "round": 2, "title": "Round 2 Tutor", "groups": [
+      { "group_code": "DIRECT_LLM", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "DIRECT" },
+      { "group_code": "BASIC_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "FULL_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "BLANK_CONTROL", "participating": false, "mode_policy": "SKIP" }
+    ] },
+    { "code": "ROUND_2_QUIZ", "type": "ASSESSMENT", "sequence_no": 8, "round": 2, "title": "Round 2 Quiz", "assessment_code": "ROUND_2_QUIZ_FIXTURE" },
+    { "code": "ROUND_3_TUTOR", "type": "TUTOR", "sequence_no": 9, "round": 3, "title": "Round 3 Tutor", "groups": [
+      { "group_code": "DIRECT_LLM", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "DIRECT" },
+      { "group_code": "BASIC_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "FULL_TUTOR", "participating": true, "tutor_question_code": "TUTOR_Q1", "mode_policy": "STUDENT_CHOICE" },
+      { "group_code": "BLANK_CONTROL", "participating": false, "mode_policy": "SKIP" }
+    ] },
+    { "code": "ROUND_3_QUIZ", "type": "ASSESSMENT", "sequence_no": 10, "round": 3, "title": "Round 3 Quiz", "assessment_code": "ROUND_3_QUIZ_FIXTURE" },
+    { "code": "POSTTEST", "type": "ASSESSMENT", "sequence_no": 11, "title": "Posttest", "assessment_code": "POSTTEST_FIXTURE" },
+    { "code": "QUESTIONNAIRE", "type": "ASSESSMENT", "sequence_no": 12, "title": "Questionnaire", "assessment_code": "QUESTIONNAIRE_FIXTURE" },
+    { "code": "FINISHED", "type": "CONTROL", "sequence_no": 13, "title": "Finished" }
+  ]
+}
