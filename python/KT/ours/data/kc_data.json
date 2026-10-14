@@ -1,0 +1,857 @@
+{
+    "domain_groups": [
+        "数与代数",
+        "方程与不等式",
+        "函数",
+        "图形的性质",
+        "图形的变化",
+        "统计与概率"
+    ],
+    "taxonomy": {
+        "数与代数": {
+            "有理数": [
+                "有理数初步",
+                "有理数基础属性"
+            ],
+            "有理数的运算": [
+                "有理数的加减",
+                "有理数的乘除",
+                "科学记数法",
+                "近似数"
+            ],
+            "实数": [
+                "平方根与立方根",
+                "无理数与实数"
+            ],
+            "代数式": [
+                "代数式应用",
+                "整式概念",
+                "整式的加减",
+                "整式的乘除",
+                "乘法公式"
+            ],
+            "因式分解": [
+                "因式分解"
+            ],
+            "分式": [
+                "分式概念性质",
+                "分式的运算"
+            ],
+            "二次根式": [
+                "概念及性质",
+                "根式运算"
+            ]
+        },
+        "方程与不等式": {
+            "一元一次方程": [
+                "方程基础",
+                "解法与性质",
+                "实际问题"
+            ],
+            "二元一次方程组": [
+                "相关概念",
+                "解法与应用",
+                "实际问题",
+                "三元一次方程组"
+            ],
+            "一元二次方程": [
+                "相关概念",
+                "解法与判定",
+                "实际问题"
+            ],
+            "分式方程": [
+                "分式方程解法",
+                "分式方程应用"
+            ],
+            "不等式与不等式组": [
+                "不等式基础",
+                "一元一次不等式",
+                "一元一次不等式组"
+            ]
+        },
+        "函数": {
+            "平面直角坐标系": [
+                "坐标基础",
+                "坐标应用"
+            ],
+            "函数基础知识": [
+                "函数概念",
+                "函数图象"
+            ],
+            "一次函数": [
+                "图象与性质",
+                "函数综合",
+                "实际应用"
+            ],
+            "二次函数": [
+                "图象与性质",
+                "核心要素",
+                "方程不等式",
+                "实际应用综合"
+            ],
+            "反比例函数": [
+                "图象与性质",
+                "几何意义",
+                "函数综合"
+            ]
+        },
+        "图形的性质": {
+            "几何图形初步": [
+                "点线面体",
+                "直线射线线段",
+                "角"
+            ],
+            "相交线与平行线": [
+                "相交线",
+                "平行线判定",
+                "平行线性质"
+            ],
+            "三角形": [
+                "三角形线段",
+                "全等三角形",
+                "特殊三角形",
+                "直角三角形"
+            ],
+            "四边形": [
+                "多边形基础",
+                "平行四边形",
+                "特殊四边形"
+            ],
+            "圆": [
+                "圆的基础",
+                "位置关系",
+                "计算与应用"
+            ],
+            "命题与证明": [
+                "逻辑推理"
+            ],
+            "限定工具作图": [
+                "尺规作图"
+            ]
+        },
+        "图形的变化": {
+            "平移": [
+                "平移性质"
+            ],
+            "轴对称": [
+                "对称性质",
+                "轴对称综合"
+            ],
+            "旋转": [
+                "旋转基础",
+                "旋转综合"
+            ],
+            "中心对称": [
+                "对称性质"
+            ],
+            "图形的相似": [
+                "相似基础",
+                "相似三角形",
+                "位似"
+            ],
+            "锐角三角函数": [
+                "三角函数定义",
+                "函数应用"
+            ],
+            "投影与视图": [
+                "投影视图"
+            ]
+        },
+        "统计与概率": {
+            "数据收集整理": [
+                "调查方法",
+                "统计图表"
+            ],
+            "数据分析": [
+                "集中趋势",
+                "波动程度"
+            ],
+            "概率": [
+                "概率初步",
+                "概率计算",
+                "概率应用"
+            ]
+        }
+    },
+    "knowledge_points": [
+        {
+            "id": "SYDS-001",
+            "description": "正数和负数",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数初步"
+        },
+        {
+            "id": "SYDS-002",
+            "description": "有理数的初步认识",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数初步"
+        },
+        {
+            "id": "SYDS-003",
+            "description": "数轴",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数基础属性"
+        },
+        {
+            "id": "SYDS-004",
+            "description": "相反数",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数基础属性"
+        },
+        {
+            "id": "SYDS-005",
+            "description": "绝对值",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数基础属性"
+        },
+        {
+            "id": "SYDS-006",
+            "description": "有理数比较大小",
+            "domain": "数与代数",
+            "topic": "有理数",
+            "sub_topic": "有理数基础属性"
+        },
+        {
+            "id": "SYDS-007",
+            "description": "有理数的加法法则",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的加减"
+        },
+        {
+            "id": "SYDS-008",
+            "description": "有理数的减法法则",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的加减"
+        },
+        {
+            "id": "SYDS-009",
+            "description": "有理数加减混合运算",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的加减"
+        },
+        {
+            "id": "SYDS-010",
+            "description": "有理数的乘法法则",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的乘除"
+        },
+        {
+            "id": "SYDS-011",
+            "description": "有理数的除法法则",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的乘除"
+        },
+        {
+            "id": "SYDS-012",
+            "description": "有理数的乘方",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的乘除"
+        },
+        {
+            "id": "SYDS-013",
+            "description": "有理数的混合运算法则",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "有理数的乘除"
+        },
+        {
+            "id": "SYDS-014",
+            "description": "科学记数法—表示较大的数",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "科学记数法"
+        },
+        {
+            "id": "SYDS-015",
+            "description": "科学记数法—表示较小的数",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "科学记数法"
+        },
+        {
+            "id": "SYDS-016",
+            "description": "近似数",
+            "domain": "数与代数",
+            "topic": "有理数的运算",
+            "sub_topic": "近似数"
+        },
+        {
+            "id": "SYDS-017",
+            "description": "算术平方根、平方根、立方根",
+            "domain": "数与代数",
+            "topic": "实数",
+            "sub_topic": "平方根与立方根"
+        },
+        {
+            "id": "SYDS-018",
+            "description": "无理数的估算",
+            "domain": "数与代数",
+            "topic": "实数",
+            "sub_topic": "无理数与实数"
+        },
+        {
+            "id": "SYDS-019",
+            "description": "实数的运算",
+            "domain": "数与代数",
+            "topic": "实数",
+            "sub_topic": "无理数与实数"
+        },
+        {
+            "id": "SYDS-020",
+            "description": "代数式、概念及意义、求值",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "代数式应用"
+        },
+        {
+            "id": "SYDS-021",
+            "description": "单项式与多项式",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "整式概念"
+        },
+        {
+            "id": "SYDS-022",
+            "description": "同类项、整式的加减及运用",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "整式的加减"
+        },
+        {
+            "id": "SYDS-023",
+            "description": "幂的运算性质（同底数幂、幂乘方、积乘方、除法）",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "整式的乘除"
+        },
+        {
+            "id": "SYDS-024",
+            "description": "整式乘法（单乘单、单乘多、多乘多、单除单）",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "整式的乘除"
+        },
+        {
+            "id": "SYDS-025",
+            "description": "平方差公式、完全平方公式及平方式",
+            "domain": "数与代数",
+            "topic": "代数式",
+            "sub_topic": "乘法公式"
+        },
+        {
+            "id": "SYDS-026",
+            "description": "因式分解定义、公式法分解因式",
+            "domain": "数与代数",
+            "topic": "因式分解",
+            "sub_topic": "因式分解"
+        },
+        {
+            "id": "SYDS-027",
+            "description": "分式的定义、有无意义条件、分式的值、基本性质",
+            "domain": "数与代数",
+            "topic": "分式",
+            "sub_topic": "分式概念性质"
+        },
+        {
+            "id": "SYDS-028",
+            "description": "分式的乘除、加减法则及混合运算",
+            "domain": "数与代数",
+            "topic": "分式",
+            "sub_topic": "分式的运算"
+        },
+        {
+            "id": "SYDS-029",
+            "description": "二次根式定义、性质和化简",
+            "domain": "数与代数",
+            "topic": "二次根式",
+            "sub_topic": "概念及性质"
+        },
+        {
+            "id": "SYDS-030",
+            "description": "最简二次根式、加减运算、化简求值",
+            "domain": "数与代数",
+            "topic": "二次根式",
+            "sub_topic": "根式运算"
+        },
+        {
+            "id": "FCBD-001",
+            "description": "方程、解及一元一次方程定义",
+            "domain": "方程与不等式",
+            "topic": "一元一次方程",
+            "sub_topic": "方程基础"
+        },
+        {
+            "id": "FCBD-002",
+            "description": "等式的性质",
+            "domain": "方程与不等式",
+            "topic": "一元一次方程",
+            "sub_topic": "解法与性质"
+        },
+        {
+            "id": "FCBD-003",
+            "description": "解一元一次方程及综合应用",
+            "domain": "方程与不等式",
+            "topic": "一元一次方程",
+            "sub_topic": "解法与性质"
+        },
+        {
+            "id": "FCBD-004",
+            "description": "实际问题与一元一次方程",
+            "domain": "方程与不等式",
+            "topic": "一元一次方程",
+            "sub_topic": "实际问题"
+        },
+        {
+            "id": "FCBD-005",
+            "description": "二元一次方程（组）定义",
+            "domain": "方程与不等式",
+            "topic": "二元一次方程组",
+            "sub_topic": "相关概念"
+        },
+        {
+            "id": "FCBD-006",
+            "description": "解二元一次方程组及其应用",
+            "domain": "方程与不等式",
+            "topic": "二元一次方程组",
+            "sub_topic": "解法与应用"
+        },
+        {
+            "id": "FCBD-007",
+            "description": "列二元一次方程组及其实际应用",
+            "domain": "方程与不等式",
+            "topic": "二元一次方程组",
+            "sub_topic": "实际问题"
+        },
+        {
+            "id": "FCBD-008",
+            "description": "三元一次方程组解法",
+            "domain": "方程与不等式",
+            "topic": "二元一次方程组",
+            "sub_topic": "三元一次方程组"
+        },
+        {
+            "id": "FCBD-009",
+            "description": "一元二次方程一般形式与方程的解",
+            "domain": "方程与不等式",
+            "topic": "一元二次方程",
+            "sub_topic": "相关概念"
+        },
+        {
+            "id": "FCBD-010",
+            "description": "解一元二次方程及根的判别式",
+            "domain": "方程与不等式",
+            "topic": "一元二次方程",
+            "sub_topic": "解法与判定"
+        },
+        {
+            "id": "FCBD-011",
+            "description": "实际问题与一元二次方程",
+            "domain": "方程与不等式",
+            "topic": "一元二次方程",
+            "sub_topic": "实际问题"
+        },
+        {
+            "id": "FCBD-012",
+            "description": "分式方程的解",
+            "domain": "方程与不等式",
+            "topic": "分式方程",
+            "sub_topic": "分式方程解法"
+        },
+        {
+            "id": "FCBD-013",
+            "description": "分式方程的实际应用",
+            "domain": "方程与不等式",
+            "topic": "分式方程",
+            "sub_topic": "分式方程应用"
+        },
+        {
+            "id": "FCBD-014",
+            "description": "不等式概念与性质",
+            "domain": "方程与不等式",
+            "topic": "不等式与不等式组",
+            "sub_topic": "不等式基础"
+        },
+        {
+            "id": "FCBD-015",
+            "description": "解一元一次不等式及应用",
+            "domain": "方程与不等式",
+            "topic": "不等式与不等式组",
+            "sub_topic": "一元一次不等式"
+        },
+        {
+            "id": "FCBD-016",
+            "description": "解一元一次不等式组及应用",
+            "domain": "方程与不等式",
+            "topic": "不等式与不等式组",
+            "sub_topic": "一元一次不等式组"
+        },
+        {
+            "id": "HS-001",
+            "description": "有序数对、点坐标、象限",
+            "domain": "函数",
+            "topic": "平面直角坐标系",
+            "sub_topic": "坐标基础"
+        },
+        {
+            "id": "HS-002",
+            "description": "坐标与图形变换及其应用",
+            "domain": "函数",
+            "topic": "平面直角坐标系",
+            "sub_topic": "坐标应用"
+        },
+        {
+            "id": "HS-003",
+            "description": "常量与变量、自变量和函数值",
+            "domain": "函数",
+            "topic": "函数基础知识",
+            "sub_topic": "函数概念"
+        },
+        {
+            "id": "HS-004",
+            "description": "函数的图象表示法",
+            "domain": "函数",
+            "topic": "函数基础知识",
+            "sub_topic": "函数图象"
+        },
+        {
+            "id": "HS-005",
+            "description": "正比例/一次函数定义、图象、性质",
+            "domain": "函数",
+            "topic": "一次函数",
+            "sub_topic": "图象与性质"
+        },
+        {
+            "id": "HS-006",
+            "description": "一次函数与方程、不等式、方程组关系",
+            "domain": "函数",
+            "topic": "一次函数",
+            "sub_topic": "函数综合"
+        },
+        {
+            "id": "HS-007",
+            "description": "一次函数的实际应用",
+            "domain": "函数",
+            "topic": "一次函数",
+            "sub_topic": "实际应用"
+        },
+        {
+            "id": "HS-008",
+            "description": "二次函数定义、图象与性质、系数关系",
+            "domain": "函数",
+            "topic": "二次函数",
+            "sub_topic": "图象与性质"
+        },
+        {
+            "id": "HS-009",
+            "description": "二次函数对称性、最值",
+            "domain": "函数",
+            "topic": "二次函数",
+            "sub_topic": "核心要素"
+        },
+        {
+            "id": "HS-010",
+            "description": "二次函数与一元二次方程、不等式关系",
+            "domain": "函数",
+            "topic": "二次函数",
+            "sub_topic": "方程不等式"
+        },
+        {
+            "id": "HS-011",
+            "description": "实际问题与二次函数综合应用",
+            "domain": "函数",
+            "topic": "二次函数",
+            "sub_topic": "实际应用综合"
+        },
+        {
+            "id": "HS-012",
+            "description": "反比例函数定义、图象、性质",
+            "domain": "函数",
+            "topic": "反比例函数",
+            "sub_topic": "图象与性质"
+        },
+        {
+            "id": "HS-013",
+            "description": "反比例函数系数k的几何意义",
+            "domain": "函数",
+            "topic": "反比例函数",
+            "sub_topic": "几何意义"
+        },
+        {
+            "id": "HS-014",
+            "description": "反比例函数与一次函数的综合",
+            "domain": "函数",
+            "topic": "反比例函数",
+            "sub_topic": "函数综合"
+        },
+        {
+            "id": "TXXZ-001",
+            "description": "几何体认识、展开图、点线面体",
+            "domain": "图形的性质",
+            "topic": "几何图形初步",
+            "sub_topic": "点线面体"
+        },
+        {
+            "id": "TXXZ-002",
+            "description": "直线、射线、线段定义及中点",
+            "domain": "图形的性质",
+            "topic": "几何图形初步",
+            "sub_topic": "直线射线线段"
+        },
+        {
+            "id": "TXXZ-003",
+            "description": "角概念、度量、运算、平分线、余补角",
+            "domain": "图形的性质",
+            "topic": "几何图形初步",
+            "sub_topic": "角"
+        },
+        {
+            "id": "TXXZ-004",
+            "description": "垂线、对顶角、邻补角",
+            "domain": "图形的性质",
+            "topic": "相交线与平行线",
+            "sub_topic": "相交线"
+        },
+        {
+            "id": "TXXZ-005",
+            "description": "平行公理及判定定理",
+            "domain": "图形的性质",
+            "topic": "相交线与平行线",
+            "sub_topic": "平行线判定"
+        },
+        {
+            "id": "TXXZ-006",
+            "description": "平行线性质定理、距离、应用",
+            "domain": "图形的性质",
+            "topic": "相交线与平行线",
+            "sub_topic": "平行线性质"
+        },
+        {
+            "id": "TXXZ-007",
+            "description": "三角形边长关系、稳定性、四线一心（高、中线、角平分线、重心）",
+            "domain": "图形的性质",
+            "topic": "三角形",
+            "sub_topic": "三角形线段"
+        },
+        {
+            "id": "TXXZ-008",
+            "description": "全等三角形判定与性质、中垂线性质",
+            "domain": "图形的性质",
+            "topic": "三角形",
+            "sub_topic": "全等三角形"
+        },
+        {
+            "id": "TXXZ-009",
+            "description": "等腰/等边三角形性质与判定",
+            "domain": "图形的性质",
+            "topic": "三角形",
+            "sub_topic": "特殊三角形"
+        },
+        {
+            "id": "TXXZ-010",
+            "description": "勾股定理及其逆定理应用",
+            "domain": "图形的性质",
+            "topic": "三角形",
+            "sub_topic": "直角三角形"
+        },
+        {
+            "id": "TXXZ-011",
+            "description": "多边形内角和、外角和、对角线",
+            "domain": "图形的性质",
+            "topic": "四边形",
+            "sub_topic": "多边形基础"
+        },
+        {
+            "id": "TXXZ-012",
+            "description": "平行四边形性质与判定、中位线",
+            "domain": "图形的性质",
+            "topic": "四边形",
+            "sub_topic": "平行四边形"
+        },
+        {
+            "id": "TXXZ-013",
+            "description": "矩形、菱形、正方形性质与判定综合",
+            "domain": "图形的性质",
+            "topic": "四边形",
+            "sub_topic": "特殊四边形"
+        },
+        {
+            "id": "TXXZ-014",
+            "description": "垂径定理、圆心角/圆周角性质",
+            "domain": "图形的性质",
+            "topic": "圆",
+            "sub_topic": "圆的基础"
+        },
+        {
+            "id": "TXXZ-015",
+            "description": "点/直线与圆位置关系、切线判定性质、内切圆",
+            "domain": "图形的性质",
+            "topic": "圆",
+            "sub_topic": "位置关系"
+        },
+        {
+            "id": "TXXZ-016",
+            "description": "正多边形、弧长、扇形、圆锥面积计算",
+            "domain": "图形的性质",
+            "topic": "圆",
+            "sub_topic": "计算与应用"
+        },
+        {
+            "id": "TXXZ-017",
+            "description": "命题、证明、逆命题、定理、反证法",
+            "domain": "图形的性质",
+            "topic": "命题与证明",
+            "sub_topic": "逻辑推理"
+        },
+        {
+            "id": "TXXZ-018",
+            "description": "尺规作图（作角等基础作图）",
+            "domain": "图形的性质",
+            "topic": "限定工具作图",
+            "sub_topic": "尺规作图"
+        },
+        {
+            "id": "TXBH-001",
+            "description": "平移性质及坐标平移变换",
+            "domain": "图形的变化",
+            "topic": "平移",
+            "sub_topic": "平移性质"
+        },
+        {
+            "id": "TXBH-002",
+            "description": "轴对称性质、对称轴、镜面对称",
+            "domain": "图形的变化",
+            "topic": "轴对称",
+            "sub_topic": "对称性质"
+        },
+        {
+            "id": "TXBH-003",
+            "description": "轴对称综合几何变换题",
+            "domain": "图形的变化",
+            "topic": "轴对称",
+            "sub_topic": "轴对称综合"
+        },
+        {
+            "id": "TXBH-004",
+            "description": "旋转三要素、性质、旋转对称图形",
+            "domain": "图形的变化",
+            "topic": "旋转",
+            "sub_topic": "旋转基础"
+        },
+        {
+            "id": "TXBH-005",
+            "description": "坐标旋转变换、旋转综合几何变换",
+            "domain": "图形的变化",
+            "topic": "旋转",
+            "sub_topic": "旋转综合"
+        },
+        {
+            "id": "TXBH-006",
+            "description": "中心对称性质、图形、原点对称点坐标",
+            "domain": "图形的变化",
+            "topic": "中心对称",
+            "sub_topic": "对称性质"
+        },
+        {
+            "id": "TXBH-007",
+            "description": "平行线分线段成比例定理",
+            "domain": "图形的变化",
+            "topic": "图形的相似",
+            "sub_topic": "相似基础"
+        },
+        {
+            "id": "TXBH-008",
+            "description": "相似三角形判定与性质",
+            "domain": "图形的变化",
+            "topic": "图形的相似",
+            "sub_topic": "相似三角形"
+        },
+        {
+            "id": "TXBH-009",
+            "description": "位似图形及坐标系位似变换",
+            "domain": "图形的变化",
+            "topic": "图形的相似",
+            "sub_topic": "位似"
+        },
+        {
+            "id": "TXBH-010",
+            "description": "正弦、余弦、正切定义及特殊角值",
+            "domain": "图形的变化",
+            "topic": "锐角三角函数",
+            "sub_topic": "三角函数定义"
+        },
+        {
+            "id": "TXBH-011",
+            "description": "解直角三角形及其应用",
+            "domain": "图形的变化",
+            "topic": "锐角三角函数",
+            "sub_topic": "函数应用"
+        },
+        {
+            "id": "TXBH-012",
+            "description": "投影、三视图画法及其计算",
+            "domain": "图形的变化",
+            "topic": "投影与视图",
+            "sub_topic": "投影视图"
+        },
+        {
+            "id": "TJGX-001",
+            "description": "全面调查与抽样调查、样本估计总体",
+            "domain": "统计与概率",
+            "topic": "数据收集整理",
+            "sub_topic": "调查方法"
+        },
+        {
+            "id": "TJGX-002",
+            "description": "条形、扇形统计图、直方图频率分布",
+            "domain": "统计与概率",
+            "topic": "数据收集整理",
+            "sub_topic": "统计图表"
+        },
+        {
+            "id": "TJGX-003",
+            "description": "算术/加权平均数、中位数、众数、四分位数",
+            "domain": "统计与概率",
+            "topic": "数据分析",
+            "sub_topic": "集中趋势"
+        },
+        {
+            "id": "TJGX-004",
+            "description": "方差、极差、离差平方和",
+            "domain": "统计与概率",
+            "topic": "数据分析",
+            "sub_topic": "波动程度"
+        },
+        {
+            "id": "TJGX-005",
+            "description": "随机事件、可能性大小、概率定义计算",
+            "domain": "统计与概率",
+            "topic": "概率",
+            "sub_topic": "概率初步"
+        },
+        {
+            "id": "TJGX-006",
+            "description": "列举法求概率（列表、树状图）、频率估计概率",
+            "domain": "统计与概率",
+            "topic": "概率",
+            "sub_topic": "概率计算"
+        },
+        {
+            "id": "TJGX-007",
+            "description": "概率在实际问题中的应用",
+            "domain": "统计与概率",
+            "topic": "概率",
+            "sub_topic": "概率应用"
+        }
+    ]
+}
