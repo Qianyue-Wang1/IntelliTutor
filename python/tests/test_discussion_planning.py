@@ -1286,6 +1286,23 @@ class DiscussionDecisionTests(unittest.TestCase):
         self.assertEqual("点(1,2)和点(4,6)的欧氏距离是5", session.current_correct_option)
         self.assertEqual(2, api.call_count)
 
+    def test_initial_step_rejects_wrong_key_when_coordinates_are_in_question(self):
+        self.answer_key_verifier.stop()
+        session = self._session()
+        question = "步骤1：请计算二维空间中两点 A = (1, 2) 和 B = (4, 6) 之间的欧氏距离（保留根号形式，不近似）："
+        options = "\nA. √5\nB. √25\nC. √37\n"
+        incorrect = "## 初始解题步骤\n" + question + options + "正确选项：C. √37"
+        corrected = "## 初始解题步骤\n" + question + options + "正确选项：B. √25"
+
+        with patch.object(session, "build_system_prompt"), patch.object(
+            session, "call_llm", side_effect=[incorrect, corrected]
+        ) as api:
+            step = session.generate_initial_step("解释 K-means 中的欧氏距离")
+
+        self.assertEqual(question, step)
+        self.assertEqual("√25", session.current_correct_option)
+        self.assertEqual(2, api.call_count)
+
     def test_initial_step_retries_when_independent_answer_check_rejects_key(self):
         self.answer_key_verifier.stop()
         session = self._session()
@@ -1304,15 +1321,29 @@ class DiscussionDecisionTests(unittest.TestCase):
             "call_llm",
             side_effect=[
                 rejected,
-                '{"verdict":"invalid","reason":"无监督学习不使用人工类别标签"}',
+                '{"verdict":"invalid","correct_options":["数据自身的模式"],"reason":"无监督学习不使用人工类别标签"}',
                 corrected,
-                '{"verdict":"valid","reason":"答案唯一且正确"}',
+                '{"verdict":"valid","correct_options":["数据自身的模式"],"reason":"答案唯一且正确"}',
             ],
         ) as api:
             session.generate_initial_step("解释无监督学习")
 
         self.assertEqual("数据自身的模式", session.current_correct_option)
         self.assertEqual(4, api.call_count)
+
+    def test_verifier_rejects_valid_label_when_its_identified_answer_differs(self):
+        self.answer_key_verifier.stop()
+        session = self._session()
+        with patch.object(session, "call_llm", return_value=(
+            '{"verdict":"valid","correct_options":["数据自身的模式"],'
+            '"reason":"数据自身的模式是正确答案"}'
+        )):
+            violation = session._verify_generated_objective(
+                "无监督学习依据什么发现结构？",
+                ["人工类别标签", "数据自身的模式", "标准答案"],
+                "人工类别标签",
+            )
+        self.assertIsNotNone(violation)
 
     def test_initial_step_accepts_letter_prefixed_correct_option(self):
         session = self._session()

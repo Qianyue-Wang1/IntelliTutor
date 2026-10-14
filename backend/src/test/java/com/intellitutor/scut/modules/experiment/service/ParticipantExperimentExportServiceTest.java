@@ -68,6 +68,8 @@ class ParticipantExperimentExportServiceTest {
 
         assertTrue(files.get("xl/workbook.xml").contains("参与者信息"));
         assertTrue(files.get("xl/workbook.xml").contains("测试作答"));
+        assertTrue(files.get("xl/workbook.xml").contains("会话时间线"));
+        assertTrue(files.get("xl/workbook.xml").contains("知识点与学习指引"));
         assertTrue(files.get("xl/workbook.xml").contains("行为事件"));
         assertFalse(String.join("", files.values()).contains("internal prompt"));
         assertFalse(String.join("", files.values()).contains("answerKey"));

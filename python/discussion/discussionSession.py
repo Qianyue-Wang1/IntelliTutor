@@ -63,6 +63,13 @@ _EUCLIDEAN_POINTS_PATTERN = re.compile(
 _EUCLIDEAN_VALUE_PATTERN = re.compile(
     rf"欧氏距离\s*(?:是|为|等于)\s*(√\s*{_NUMBER_PATTERN}|{_NUMBER_PATTERN})"
 )
+_EUCLIDEAN_LABELED_POINTS_PATTERN = re.compile(
+    rf"(?:点\s*)?[A-Za-z]\s*=\s*[（(]\s*({_NUMBER_PATTERN})\s*[,，]\s*({_NUMBER_PATTERN})\s*[)）]"
+    rf"\s*(?:和|与|、|及)\s*(?:点\s*)?[A-Za-z]\s*=\s*[（(]\s*({_NUMBER_PATTERN})\s*[,，]\s*({_NUMBER_PATTERN})\s*[)）]"
+)
+_EUCLIDEAN_NUMERIC_OPTION_PATTERN = re.compile(
+    rf"^\s*(√\s*(?:{_NUMBER_PATTERN}|\(\s*{_NUMBER_PATTERN}\s*\))|{_NUMBER_PATTERN})\s*$"
+)
 
 
 def _euclidean_distance_answer_violation(option: str) -> str | None:
@@ -82,8 +89,38 @@ def _euclidean_distance_answer_violation(option: str) -> str | None:
     return "欧氏距离计算结果与所标记的正确选项不一致"
 
 
+def _euclidean_question_answer_violation(question: str, options: list[str], correct_option: str) -> str | None:
+    """Check a two-point distance question when every choice is a numeric expression."""
+    if "欧氏距离" not in question:
+        return None
+    points = _EUCLIDEAN_LABELED_POINTS_PATTERN.search(question) or _EUCLIDEAN_POINTS_PATTERN.search(question)
+    if not points:
+        return None
+    values = [_EUCLIDEAN_NUMERIC_OPTION_PATTERN.fullmatch(option) for option in options]
+    if not all(values):
+        return "欧氏距离选项无法全部可靠解析"
+    x1, y1, x2, y2 = (float(value) for value in points.groups())
+    expected = math.hypot(x2 - x1, y2 - y1)
+    require_radical = "保留根号" in question
+    correct = []
+    for option, match in zip(options, values):
+        expression = match.group(1).replace(" ", "")
+        if require_radical and not expression.startswith("√"):
+            continue
+        radicand = expression[1:].strip("()") if expression.startswith("√") else expression
+        if expression.startswith("√") and float(radicand) < 0:
+            return "欧氏距离选项包含无效根式"
+        actual = math.sqrt(float(radicand)) if expression.startswith("√") else float(expression)
+        if math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-9):
+            correct.append(option)
+    if correct != [correct_option]:
+        return "欧氏距离题的正确选项与计算结果不一致或不唯一"
+    return ""
+
+
 class ObjectiveQuestionVerification(BaseModel):
     verdict: Literal["valid", "invalid"]
+    correct_options: list[str]
     reason: str = Field(min_length=1)
 
 
@@ -296,6 +333,9 @@ class DiscussionSystem(BaseSession):
         correct_option: str,
     ) -> str | None:
         """Return a rejection reason unless a generated objective answer key is verified."""
+        numeric_violation = _euclidean_question_answer_violation(question, options, correct_option)
+        if numeric_violation is not None:
+            return numeric_violation or None
         has_parsable_euclidean_claim = (
             "欧氏距离" in correct_option
             and _EUCLIDEAN_POINTS_PATTERN.search(correct_option)
@@ -324,8 +364,10 @@ class DiscussionSystem(BaseSession):
             verification = ObjectiveQuestionVerification.model_validate(value)
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
             return "答案校验器没有返回可靠结论"
-        if verification.verdict == "valid":
+        if verification.verdict == "valid" and verification.correct_options == [correct_option]:
             return None
+        if verification.verdict == "valid":
+            return "答案校验器识别的正确选项与标记答案不一致"
         return f"答案校验未通过：{verification.reason}"
 
     def build_planning_context(

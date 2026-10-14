@@ -332,9 +332,9 @@ VERIFY_DISCUSSION_QUESTION_PROMPT = """
 你是独立的客观题事实核验器。请核验给定题目、选项和标记答案；不要相信标记答案本身，必须自行判断其事实或计算是否正确。
 
 只输出纯 JSON：
-{{"verdict":"valid|invalid","reason":"简短原因"}}
+{{"verdict":"valid|invalid","correct_options":["逐字复制所有客观正确的选项文本"],"reason":"简短原因"}}
 
-只有当标记答案是唯一正确选项时输出 valid。题目或选项存在事实、计算、逻辑错误，多个选项同样正确，或无法可靠判断时，都输出 invalid。
+先独立判断每个选项是否正确，再填写 correct_options；不得依据标记答案倒推。只有 correct_options 恰好包含标记答案一个选项时输出 valid。题目或选项存在事实、计算、逻辑错误，多个选项同样正确，或无法可靠判断时，都输出 invalid。verdict、correct_options 和 reason 必须彼此一致。
 
 待核验内容：{candidate}
 """

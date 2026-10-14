@@ -54,6 +54,10 @@ public class ParticipantExperimentExportService {
         List<Map<String, Object>> interactions = jdbc.queryForList("SELECT r.round_no,r.group_code_snapshot,r.mode,r.status,r.interaction_count,r.started_at,r.completed_at," +
                 "m.role,m.message_type,CASE WHEN m.role='student' THEN m.content ELSE NULL END student_message,m.correctness,m.client_timestamp,m.server_timestamp " +
                 "FROM t_experiment_tutor_run r LEFT JOIN t_tutor_message m ON m.tutor_run_id=r.id WHERE r.assignment_id=? ORDER BY r.round_no,m.server_timestamp", assignmentId);
+        List<Map<String, Object>> conversationMessages = jdbc.queryForList("SELECT r.round_no,r.mode,m.session_id,m.message_key,m.role,m.message_type,m.content,m.correctness,m.server_timestamp " +
+                "FROM t_experiment_tutor_run r JOIN t_tutor_message m ON m.tutor_run_id=r.id WHERE r.assignment_id=? " +
+                "ORDER BY r.round_no,m.server_timestamp,CASE WHEN m.role='student' THEN 0 ELSE 1 END,m.id", assignmentId);
+        ParticipantConversationExport conversation = new ParticipantConversationExport(objectMapper);
         List<Map<String, Object>> eventRows = jdbc.queryForList("SELECT event_id,client_event_id,round_no,experiment_stage,tutor_mode,question_id,session_id,event_type," +
                 "event_data::text event_data,client_timestamp,server_timestamp FROM t_experiment_event_log WHERE assignment_id=? ORDER BY server_timestamp,event_id", assignmentId);
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -68,6 +72,10 @@ public class ParticipantExperimentExportService {
             writeSheet(workbook, "学生交互", interactions, List.of("round_no", "group_code_snapshot", "mode", "status",
                     "interaction_count", "started_at", "completed_at", "role", "message_type", "student_message",
                     "correctness", "client_timestamp", "server_timestamp"));
+            writeSheet(workbook, "会话时间线", conversation.timeline(conversationMessages), List.of("round_no", "mode", "session_id",
+                    "sequence_no", "turn_id", "role", "content_type", "step_key", "content", "options_json", "correctness", "timestamp", "part_no"));
+            writeSheet(workbook, "知识点与学习指引", conversation.learningMaterials(conversationMessages), List.of("round_no", "mode",
+                    "session_id", "section", "item_no", "title", "content", "part_no", "timestamp"));
             writeSheet(workbook, "行为事件", eventRows);
             workbook.write(output);
             return output.toByteArray();
