@@ -1,9 +1,10 @@
 from __future__ import annotations
 import re
 import json
+import math
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Literal
 from datetime import datetime, timedelta
 from loguru import logger
 from pydantic import ValidationError
@@ -27,7 +28,10 @@ def extract_objective_options(text: str) -> tuple[str, list[str]]:
     options: list[str] = []
     kept_lines: list[str] = []
     option_pattern = re.compile(r"^\s*(?:[-*•]\s*)?[A-DＡ-Ｄ][.．、:：)]\s*(.+?)\s*$", re.IGNORECASE)
+    correct_option_pattern = re.compile(r"^\s*正确选项\s*[：:]\s*(.+?)\s*$")
     for line in str(text or "").splitlines():
+        if correct_option_pattern.match(line):
+            continue
         match = option_pattern.match(line)
         if match:
             option = match.group(1).strip()
@@ -36,6 +40,51 @@ def extract_objective_options(text: str) -> tuple[str, list[str]]:
         else:
             kept_lines.append(line)
     return "\n".join(kept_lines).strip(), options
+
+
+def extract_objective_question(text: str) -> tuple[str, list[str], str]:
+    """Read a generated multiple-choice question and its hidden answer marker."""
+    prompt, options = extract_objective_options(text)
+    match = re.search(r"^\s*正确选项\s*[：:]\s*(.+?)\s*$", str(text or ""), re.MULTILINE)
+    correct_option = match.group(1).strip() if match else ""
+    letter_prefixed = re.match(r"^[A-DＡ-Ｄ][.．、:：)]\s*(.+?)\s*$", correct_option, re.IGNORECASE)
+    if letter_prefixed and letter_prefixed.group(1).strip() in options:
+        correct_option = letter_prefixed.group(1).strip()
+    if correct_option not in options:
+        raise PlanningError("objective question requires a correct option from its choices")
+    return prompt, options, correct_option
+
+
+_NUMBER_PATTERN = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
+_EUCLIDEAN_POINTS_PATTERN = re.compile(
+    rf"点\s*[（(]\s*({_NUMBER_PATTERN})\s*[,，]\s*({_NUMBER_PATTERN})\s*[)）]"
+    rf"\s*(?:和|与)\s*点\s*[（(]\s*({_NUMBER_PATTERN})\s*[,，]\s*({_NUMBER_PATTERN})\s*[)）]"
+)
+_EUCLIDEAN_VALUE_PATTERN = re.compile(
+    rf"欧氏距离\s*(?:是|为|等于)\s*(√\s*{_NUMBER_PATTERN}|{_NUMBER_PATTERN})"
+)
+
+
+def _euclidean_distance_answer_violation(option: str) -> str | None:
+    """Reject a selected Euclidean-distance claim whose numeric result is false."""
+    if "欧氏距离" not in option:
+        return None
+    points = _EUCLIDEAN_POINTS_PATTERN.search(option)
+    stated_value = _EUCLIDEAN_VALUE_PATTERN.search(option)
+    if not points or not stated_value:
+        return None
+    x1, y1, x2, y2 = (float(value) for value in points.groups())
+    expected = math.hypot(x2 - x1, y2 - y1)
+    value_text = stated_value.group(1).replace(" ", "")
+    actual = math.sqrt(float(value_text[1:])) if value_text.startswith("√") else float(value_text)
+    if math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-9):
+        return None
+    return "欧氏距离计算结果与所标记的正确选项不一致"
+
+
+class ObjectiveQuestionVerification(BaseModel):
+    verdict: Literal["valid", "invalid"]
+    reason: str = Field(min_length=1)
 
 
 def _without_unknown_option(options: list[str]) -> list[str]:
@@ -65,6 +114,21 @@ def _normalize_objective_options(options: list[str]) -> list[str]:
     ):
         raise PlanningError("objective question requires distinct knowledge options")
     return normalized
+
+
+def _candidate_reuses_recent_mastered_answer(
+    answer: str,
+    previous_options: list[str],
+    candidate_options: list[str],
+) -> bool:
+    """Reject a next main question whose choices repeat the just-mastered answer."""
+    normalize = lambda value: re.sub(r"[\W_]+", "", str(value or ""), flags=re.UNICODE).lower()
+    normalized_answer = normalize(answer)
+    if not normalized_answer:
+        return False
+    normalized_previous = {normalize(option) for option in previous_options}
+    normalized_candidate = {normalize(option) for option in candidate_options}
+    return normalized_answer in normalized_previous and normalized_answer in normalized_candidate
 
 
 def _strip_json_fence(response) -> str:
@@ -141,9 +205,11 @@ class DiscussionSystem(BaseSession):
         self.current_step = ""
         self.current_step_number = "1"
         self.current_options = []
+        self.current_correct_option = ""
         self.pending_user_question = ""
         self.pending_resume_step = ""
         self.pending_resume_options = []
+        self.pending_resume_correct_option = ""
         self.pending_advance_feedback = ""
         self.pending_advance_reason = ""
         self.system_prompt = ""
@@ -188,6 +254,13 @@ class DiscussionSystem(BaseSession):
             node for node in self.discussion_plan.nodes
             if node.id == self.discussion_plan.active_node_id
         )
+        if self.current_correct_option:
+            if feedback.strip() == self.current_correct_option:
+                return AnswerEvaluation(answer_performance="mastered", reason="回答正确")
+            return AnswerEvaluation(
+                answer_performance="not_mastered",
+                reason="所选选项不是本题正确答案。",
+            )
         from discussion.prompt.zh.prompt import EVALUATE_DISCUSSION_ANSWER_PROMPT
 
         response = self.call_llm(EVALUATE_DISCUSSION_ANSWER_PROMPT.format(
@@ -215,6 +288,45 @@ class DiscussionSystem(BaseSession):
             return evaluation
         except (ValidationError, ValueError, TypeError) as exc:
             raise PlanningError("invalid answer evaluation") from exc
+
+    def _verify_generated_objective(
+        self,
+        question: str,
+        options: list[str],
+        correct_option: str,
+    ) -> str | None:
+        """Return a rejection reason unless a generated objective answer key is verified."""
+        has_parsable_euclidean_claim = (
+            "欧氏距离" in correct_option
+            and _EUCLIDEAN_POINTS_PATTERN.search(correct_option)
+            and _EUCLIDEAN_VALUE_PATTERN.search(correct_option)
+        )
+        if has_parsable_euclidean_claim:
+            return _euclidean_distance_answer_violation(correct_option)
+
+        from discussion.prompt.zh.prompt import VERIFY_DISCUSSION_QUESTION_PROMPT
+
+        candidate = json.dumps(
+            {
+                "question": question,
+                "options": options,
+                "correct_option": correct_option,
+            },
+            ensure_ascii=False,
+        )
+        response = self.call_llm(
+            VERIFY_DISCUSSION_QUESTION_PROMPT.format(candidate=candidate),
+            model_type="large",
+            if_system_prompt=False,
+        )
+        try:
+            value, _ = json.JSONDecoder().raw_decode(_strip_json_fence(response))
+            verification = ObjectiveQuestionVerification.model_validate(value)
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
+            return "答案校验器没有返回可靠结论"
+        if verification.verdict == "valid":
+            return None
+        return f"答案校验未通过：{verification.reason}"
 
     def build_planning_context(
         self,
@@ -418,6 +530,12 @@ class DiscussionSystem(BaseSession):
                 except PlanningError:
                     violation = "正常教学步骤必须提供至少两个非空、互异的知识题选项"
             if violation is None and decision.next_node is not None:
+                violation = self._verify_generated_objective(
+                    decision.next_node.prompt,
+                    list(decision.next_node.options),
+                    decision.next_node.correct_option,
+                )
+            if violation is None and decision.next_node is not None:
                 violation = learner_prompt_violation(
                     decision.next_node.prompt,
                     stage="follow_up",
@@ -473,6 +591,15 @@ class DiscussionSystem(BaseSession):
                     f"unsafe discussion teaching recovery: {violation}"
                 )
             recovery_options = _normalize_objective_options(list(recovery.options))
+            answer_key_violation = self._verify_generated_objective(
+                recovery_prompt,
+                recovery_options,
+                recovery.correct_option.strip(),
+            )
+            if answer_key_violation is not None:
+                raise PlanningError(
+                    f"unsafe discussion teaching recovery: {answer_key_violation}"
+                )
             if action == "advance_main":
                 return PlanningDecision(
                     answer_performance="mastered",
@@ -483,6 +610,7 @@ class DiscussionSystem(BaseSession):
                         "objective": target_objective,
                         "prompt": recovery_prompt,
                         "options": recovery_options,
+                        "correct_option": recovery.correct_option.strip(),
                     },
                 )
             return PlanningDecision(
@@ -491,6 +619,7 @@ class DiscussionSystem(BaseSession):
                 reason=RECOVERY_REVISE_REASON,
                 recovery_prompt=recovery_prompt,
                 recovery_options=recovery_options,
+                recovery_correct_option=recovery.correct_option.strip(),
             )
         raise PlanningError(f"unsafe learner-facing discussion prompt: {violation}")
 
@@ -513,6 +642,11 @@ class DiscussionSystem(BaseSession):
                 objective=target_objective,
                 current_prompt=context.active_prompt,
                 feedback=context.explicit_feedback,
+            )
+            recovery_prompt_request += (
+                "\n上一题已确认的答案："
+                f"{context.explicit_feedback}。下一题必须考查当前目标的新内容，"
+                "不得把这个答案再次作为选项。"
             )
             if attempt:
                 recovery_prompt_request += (
@@ -542,6 +676,19 @@ class DiscussionSystem(BaseSession):
                     recovery_prompt,
                 ):
                     raise PlanningError("next discussion question repeats the current question")
+                if _candidate_reuses_recent_mastered_answer(
+                    context.explicit_feedback,
+                    self.current_options,
+                    recovery_options,
+                ):
+                    raise PlanningError("next discussion question reuses the just-mastered answer")
+                answer_key_violation = self._verify_generated_objective(
+                    recovery_prompt,
+                    recovery_options,
+                    recovery.correct_option.strip(),
+                )
+                if answer_key_violation is not None:
+                    raise PlanningError(answer_key_violation)
             except (ValidationError, ValueError, TypeError, PlanningError) as exc:
                 last_error = exc
                 continue
@@ -554,6 +701,7 @@ class DiscussionSystem(BaseSession):
                     "objective": target_objective,
                     "prompt": recovery_prompt,
                     "options": recovery_options,
+                    "correct_option": recovery.correct_option.strip(),
                 },
             )
         raise PlanningError("invalid next discussion teaching step") from last_error
@@ -637,6 +785,14 @@ class DiscussionSystem(BaseSession):
                     continue
                 parts.append(teaching.check_question.strip())
             learner_prompt = "\n\n".join(parts)
+            if not understanding_check:
+                violation = self._verify_generated_objective(
+                    learner_prompt,
+                    objective_options,
+                    teaching.correct_option.strip(),
+                )
+                if violation is not None:
+                    continue
             violation = learner_prompt_violation(
                 learner_prompt,
                 stage="follow_up",
@@ -669,6 +825,11 @@ class DiscussionSystem(BaseSession):
                 if understanding_check
                 else objective_options
             ),
+            recovery_correct_option=(
+                None
+                if understanding_check
+                else teaching.correct_option.strip()
+            ),
         )
 
     def _add_visible_answer_feedback(
@@ -688,6 +849,7 @@ class DiscussionSystem(BaseSession):
         if not alternate_explanation:
             self.pending_resume_step = projection.current_step
             self.pending_resume_options = _without_unknown_option(list(self.current_options))
+            self.pending_resume_correct_option = self.current_correct_option
         self.pending_user_question = user_question
         evaluation = AnswerEvaluation(
             answer_performance="needs_support",
@@ -700,6 +862,7 @@ class DiscussionSystem(BaseSession):
             alternate_explanation=alternate_explanation,
         )
         self.current_options = ["理解了", "还不理解"]
+        self.current_correct_option = ""
         step = f"步骤{projection.current_step_number}：{decision.recovery_prompt}"
         self.history.append({"role": "user", "content": user_question})
         self.history.append({"role": "assistant", "content": step})
@@ -709,9 +872,11 @@ class DiscussionSystem(BaseSession):
         projection = project_discussion_plan(self.discussion_plan)
         step = self.pending_resume_step or projection.current_step
         self.current_options = _without_unknown_option(list(self.pending_resume_options))
+        self.current_correct_option = self.pending_resume_correct_option
         self.pending_user_question = ""
         self.pending_resume_step = ""
         self.pending_resume_options = []
+        self.pending_resume_correct_option = ""
         self.history.append({"role": "user", "content": "理解了"})
         self.history.append({"role": "assistant", "content": step})
         return {"status": "sub_step", "step": step}
@@ -801,10 +966,17 @@ class DiscussionSystem(BaseSession):
             self.pending_advance_feedback = answered_feedback
             self.pending_advance_reason = evaluation.reason
             self.current_options = [RETRY_NEXT_STEP_OPTION]
+            self.current_correct_option = ""
         elif decision.next_node is not None:
             self.current_options = _without_unknown_option(list(decision.next_node.options))
+            self.current_correct_option = decision.next_node.correct_option.strip()
         else:
             self.current_options = _without_unknown_option(list(decision.recovery_options))
+            self.current_correct_option = (
+                decision.recovery_correct_option.strip()
+                if decision.recovery_correct_option
+                else ""
+            )
         if decision.action in {"advance_main", "complete_discussion"}:
             self.pending_advance_feedback = ""
             self.pending_advance_reason = ""
@@ -836,6 +1008,7 @@ class DiscussionSystem(BaseSession):
         if decision.action == "complete_discussion":
             self.is_complete = True
             self.current_options = []
+            self.current_correct_option = ""
             try:
                 summary = self.summary()
             except Exception:
@@ -1022,9 +1195,21 @@ class DiscussionSystem(BaseSession):
             result = llm_response.split(target, 1)[-1].strip()
             violation = learner_prompt_violation(result, stage="initial")
             if violation is None:
-                result, options = extract_objective_options(result)
+                try:
+                    result, options, correct_option = extract_objective_question(result)
+                except PlanningError as exc:
+                    violation = str(exc)
+                    continue
+                violation = self._verify_generated_objective(
+                    result,
+                    options,
+                    correct_option,
+                )
+                if violation is not None:
+                    continue
                 if len(options) >= 2:
                     self.current_options = options
+                    self.current_correct_option = correct_option
                     return result
                 violation = "未提供至少两个可点击的客观选项"
         raise PlanningError(f"unsafe initial discussion prompt: {violation}")

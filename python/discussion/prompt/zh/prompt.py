@@ -77,7 +77,7 @@ INIT_STEP_PROMPT = """
 # 规则
 - 只给一个具体操作，不给完整答案或后续多个步骤。
 - 第一步必须用一道低门槛客观选择题了解学习者对任务及必要前置知识的掌握程度，不得要求自由作答。
-- 在题干后逐行输出 A、B、C 三个简短且有区分度的选项；不要提供“不知道”选项，学习者有疑问时会使用输入框提问。
+- 在题干后逐行输出 A、B、C 三个简短且有区分度的选项；不要提供“不知道”选项，学习者有疑问时会使用输入框提问。最后另起一行输出“正确选项：”加上一个完整选项文本，该文本必须与 A、B、C 之一逐字一致；系统会隐藏这一行，不会向学习者展示。
 - 不得一开始要求学习者自行列出关键术语、定义、公式或完整解题结构，也不得预设学习者已经知道题目中的专业词汇。
 - 事实任务可询问已知来源；程序/技能任务可询问是否做过并给出容易执行的第一项操作；推理、语言、计算和开放任务先确认相关经验或最基础的理解。
 - 若事实不确定，第一步应是核实而非猜测。
@@ -296,8 +296,8 @@ PLAN_DISCUSSION_NEXT_ACTION_PROMPT = """
 你是启发研讨的动态规划器。根据给定且已经过权限裁剪的上下文，只输出纯 JSON，不输出 Markdown。
 
 必须输出完整结构：
-{{"answer_performance":"mastered|partial|not_mastered|needs_support|off_topic","action":"continue_current|insert_remediation|insert_probe|advance_main|complete_discussion","reason":"内部规划依据","next_node":{{"kind":"main|remediation|probe","objective":"单一目标","prompt":"简短讲解和一道客观题题干","options":["简短选项1","简短选项2","简短选项3"]}}}}
-需要 next_node 的 action 不得遗漏 kind、objective、prompt、options；不需要 next_node 时省略整个 next_node 字段。answer_performance 必须与上下文完全一致。
+{{"answer_performance":"mastered|partial|not_mastered|needs_support|off_topic","action":"continue_current|insert_remediation|insert_probe|advance_main|complete_discussion","reason":"内部规划依据","next_node":{{"kind":"main|remediation|probe","objective":"单一目标","prompt":"简短讲解和一道客观题题干","options":["简短选项1","简短选项2","简短选项3"],"correct_option":"与 options 中一项逐字相同"}}}}
+需要 next_node 的 action 不得遗漏 kind、objective、prompt、options、correct_option；不需要 next_node 时省略整个 next_node 字段。answer_performance 必须与上下文完全一致。
 
 action 只能是 continue_current、insert_remediation、insert_probe、advance_main、complete_discussion。
 insert_remediation、insert_probe、advance_main 必须提供 next_node；其他 action 禁止提供 next_node。
@@ -309,7 +309,7 @@ advance_main 的 next_node.prompt 必须先用二到四句直接讲解下一规�
 answer_performance 为 partial 或 not_mastered 时，补充缺失内容后只做一次简短确认；不要连续让学习者猜定义、猜术语或从多个例子归纳概念。
 除非上下文已证明学习者掌握相关基础，或原任务明确要求公式计算，否则不得要求在文本框中输入定义式、长公式或复杂符号。
 next_node.prompt 是直接展示给学习者的教师话语，只能包含必要解释和问题。学习者画像、认知负荷、行为判断、思维特质、采用的教学原则和规划理由只能写入 reason，严禁放进 prompt，也不得用括号附注。
-所有检查理解的问题必须是客观选择题；options 提供 3 个简短、有区分度的答案，不得提供“不知道”。不得要求学习者自由解释、复述或推导。
+所有检查理解的问题必须是客观选择题；options 提供 3 个简短、有区分度的答案，不得提供“不知道”；correct_option 必须是唯一正确答案且与其中一项逐字相同。不得要求学习者自由解释、复述或推导。
 
 上下文：{context}
 """
@@ -317,9 +317,9 @@ next_node.prompt 是直接展示给学习者的教师话语，只能包含必要
 
 RECOVER_DISCUSSION_TEACHING_PROMPT = """
 你是启发研讨教师。规划器暂时无法生成可靠步骤，请针对当前目标直接提供一次简短教学，只输出纯 JSON：
-{{"explanation":"用一到三句通俗语言解释当前目标，不使用不必要的公式","check_question":"紧接解释提出一道低门槛客观题","options":["简短选项1","简短选项2","简短选项3"]}}
+{{"explanation":"用一到三句通俗语言解释当前目标，不使用不必要的公式","check_question":"紧接解释提出一道低门槛客观题","options":["简短选项1","简短选项2","简短选项3"],"correct_option":"与 options 中一项逐字相同"}}
 
-options 必须提供至少两个含义清楚、彼此可区分的答案，不得提供“不知道”，题干和解释不得直接泄露正确答案。不得输出 Markdown、教学策略、学习者画像、认知负荷或规划说明。不得让学习者自行定义尚未理解的术语，也不得提出需要自由作答的主观题。
+options 必须提供至少两个含义清楚、彼此可区分的答案，不得提供“不知道”；correct_option 必须是唯一正确答案且与其中一项逐字相同。题干和解释不得直接泄露正确答案。不得输出 Markdown、教学策略、学习者画像、认知负荷或规划说明。不得让学习者自行定义尚未理解的术语，也不得提出需要自由作答的主观题。
 
 学习任务：{question}
 当前目标：{objective}
@@ -328,16 +328,28 @@ options 必须提供至少两个含义清楚、彼此可区分的答案，不得
 """
 
 
+VERIFY_DISCUSSION_QUESTION_PROMPT = """
+你是独立的客观题事实核验器。请核验给定题目、选项和标记答案；不要相信标记答案本身，必须自行判断其事实或计算是否正确。
+
+只输出纯 JSON：
+{{"verdict":"valid|invalid","reason":"简短原因"}}
+
+只有当标记答案是唯一正确选项时输出 valid。题目或选项存在事实、计算、逻辑错误，多个选项同样正确，或无法可靠判断时，都输出 invalid。
+
+待核验内容：{candidate}
+"""
+
+
 TEACH_CURRENT_OBJECTIVE_PROMPT = """
 你是按既定教学规划推进的学习导师。学习者明确表示不懂、不会或需要解释。请直接讲解当前知识点，只输出纯 JSON：
-{{"explanation":"用二到四句通俗语言直接讲清当前知识的含义和作用","example":"仅在规则允许时填写一个简短例子，否则省略此字段","check_question":"一道简短客观题；若学习者主动提问则只问是否理解","options":["简短选项1","简短选项2","简短选项3"]}}
+{{"explanation":"用二到四句通俗语言直接讲清当前知识的含义和作用","example":"仅在规则允许时填写一个简短例子，否则省略此字段","check_question":"一道简短客观题；若学习者主动提问则只问是否理解","options":["简短选项1","简短选项2","简短选项3"],"correct_option":"与 options 中一项逐字相同"}}
 
 规则：
 - 不要求学习者猜定义、列术语、推导公式或从例子自行归纳结论。
 - 讲解聚焦一个知识点，不提前展开后续步骤。
 - {example_rule}
 - 学习者主动提问时先直接回答该问题，check_question 只问是否理解，options 必须是 ["理解了","还不理解"]，不为临时问题另出考题。
-- 其他情况下 check_question 必须是当前知识点的低负担客观题，options 提供 3 个简短、有区分度的答案，不得提供“不知道”。
+- 其他情况下 check_question 必须是当前知识点的低负担客观题，options 提供 3 个简短、有区分度的答案，不得提供“不知道”；correct_option 必须是唯一正确答案且与其中一项逐字相同。
 - 不输出 Markdown、步骤编号、画像、认知负荷、教学策略或规划理由。
 
 学习任务：{question}

@@ -1432,6 +1432,7 @@ class DiscussionInitResponse(BaseModel):
     problem_solving_hint: Optional[ProblemSolvingHint] = None
     learning_path: List[LearningPathStep] = Field(default_factory=list)
     current_options: List[str] = Field(default_factory=list)
+    current_correct_option: str = ""
     messages_history: List[MessageData]
     discussion_tree: List[StepData]
 
@@ -1471,6 +1472,7 @@ class DiscussionFeedbackResponse(BaseModel):
     discussion_tree: List["StepData"] = Field(default_factory=list)
     messages_history: List["MessageData"] = Field(default_factory=list)
     current_options: List[str] = Field(default_factory=list)
+    current_correct_option: str = ""
     learner_state_status: str = "NOT_APPLICABLE"
     learner_state_error: str = ""
 
@@ -1521,9 +1523,11 @@ class DiscussionSessionStateResponse(BaseModel):
     problem_solving_hint: Optional[ProblemSolvingHint] = None
     learning_path: List[LearningPathStep] = Field(default_factory=list)
     current_options: List[str] = Field(default_factory=list)
+    current_correct_option: str = ""
     pending_user_question: str = ""
     pending_resume_step: str = ""
     pending_resume_options: List[str] = Field(default_factory=list)
+    pending_resume_correct_option: str = ""
     pending_advance_feedback: str = ""
     pending_advance_reason: str = ""
     is_complete: bool
@@ -1784,9 +1788,11 @@ async def restore_discussion_session(request: RestoreSessionRequest):
     session.core_knowledge, session.problem_solving_hint = _restore_structured_knowledge(snapshot)
     session.learning_path = _as_list(snapshot.get("learning_path"))
     session.current_options = _discussion_options(snapshot.get("current_options"))
+    session.current_correct_option = str(snapshot.get("current_correct_option", "")).strip()
     session.pending_user_question = str(snapshot.get("pending_user_question", ""))
     session.pending_resume_step = str(snapshot.get("pending_resume_step", ""))
     session.pending_resume_options = _discussion_options(snapshot.get("pending_resume_options"))
+    session.pending_resume_correct_option = str(snapshot.get("pending_resume_correct_option", "")).strip()
     session.pending_advance_feedback = str(snapshot.get("pending_advance_feedback", ""))
     session.pending_advance_reason = str(snapshot.get("pending_advance_reason", ""))
     if not session.knowledge_dict and session.core_knowledge:
@@ -1896,6 +1902,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
                 "problem_solving_hint": discussSession.problem_solving_hint,
                 "learning_path": discussSession.learning_path,
                 "current_options": discussSession.current_options,
+                "current_correct_option": discussSession.current_correct_option,
                 "messages_history": messages_history,
                 "discussion_tree": [initial_step_node]
             }
@@ -2054,6 +2061,7 @@ async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
             "discussion_tree": discussSession.steps,
             "messages_history": discussSession.messages_history,
             "current_options": discussSession.current_options,
+            "current_correct_option": discussSession.current_correct_option,
             "pending_advance_feedback": discussSession.pending_advance_feedback,
             "pending_advance_reason": discussSession.pending_advance_reason,
             "learner_state_status": discussSession.learner_state_status,
@@ -2098,9 +2106,11 @@ async def get_discussion_session_state(session_id: str):
             "problem_solving_hint": discussSession.problem_solving_hint,
             "learning_path": discussSession.learning_path,
             "current_options": discussSession.current_options,
+            "current_correct_option": discussSession.current_correct_option,
             "pending_user_question": discussSession.pending_user_question,
             "pending_resume_step": discussSession.pending_resume_step,
             "pending_resume_options": discussSession.pending_resume_options,
+            "pending_resume_correct_option": discussSession.pending_resume_correct_option,
             "pending_advance_feedback": discussSession.pending_advance_feedback,
             "pending_advance_reason": discussSession.pending_advance_reason,
             "is_complete": discussSession.is_complete,

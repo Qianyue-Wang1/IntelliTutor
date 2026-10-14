@@ -78,8 +78,10 @@ from discussion.discussionSession import (
 from discussion.planning import (
     AnswerEvaluation,
     PlanNode,
+    PlanningContext,
     PlanningDecision,
     PlanningError,
+    TeachingRecovery,
     apply_decision,
     create_initial_plan,
     learner_questions_are_near_duplicates,
@@ -106,6 +108,23 @@ from server import (
 
 
 class DiscussionPlanningModelTests(unittest.TestCase):
+    def test_teaching_recovery_requires_a_correct_option_from_its_choices(self):
+        valid = TeachingRecovery.model_validate({
+            "explanation": "后训练使用带明确任务目标的监督数据。",
+            "check_question": "哪项属于后训练数据？",
+            "options": ["情感标注数据", "随机遮盖文本", "打乱词序"],
+            "correct_option": "情感标注数据",
+        })
+        self.assertEqual("情感标注数据", valid.correct_option)
+
+        with self.assertRaises(ValueError):
+            TeachingRecovery.model_validate({
+                "explanation": "后训练使用带明确任务目标的监督数据。",
+                "check_question": "哪项属于后训练数据？",
+                "options": ["情感标注数据", "随机遮盖文本", "打乱词序"],
+                "correct_option": "指令加理想回答",
+            })
+
     def test_duplicate_check_question_is_rejected_when_explanations_differ(self):
         current = (
             "步骤2：主成分表示数据变化最剧烈的方向；它是协方差矩阵最大特征值对应的特征向量，"
@@ -427,6 +446,15 @@ class DiscussionLegacyMigrationTests(unittest.TestCase):
 
 
 class DiscussionDecisionTests(unittest.TestCase):
+    def setUp(self):
+        self.answer_key_verifier = patch.object(
+            DiscussionSystem,
+            "_verify_generated_objective",
+            return_value=None,
+        )
+        self.answer_key_verifier.start()
+        self.addCleanup(self.answer_key_verifier.stop)
+
     def _session(self):
         session = DiscussionSystem("session", "题目", "student")
         session.discussion_plan = create_initial_plan("识别目标", "题目要求什么？")
@@ -450,6 +478,18 @@ class DiscussionDecisionTests(unittest.TestCase):
         self.assertEqual("not_mastered", evaluation.answer_performance)
         self.assertEqual("缺少关键作用", evaluation.reason)
 
+    def test_option_answer_uses_the_stored_correct_option_without_model_grading(self):
+        session = self._session()
+        session.current_options = ["情感标注数据", "随机遮盖文本", "打乱词序"]
+        session.current_correct_option = "情感标注数据"
+
+        with patch.object(session, "call_llm", side_effect=AssertionError("客观选项不应调用模型判分")):
+            correct = session.evaluate_answer("情感标注数据")
+            incorrect = session.evaluate_answer("随机遮盖文本")
+
+        self.assertEqual("mastered", correct.answer_performance)
+        self.assertEqual("not_mastered", incorrect.answer_performance)
+
     def test_plan_allows_the_same_question_template_for_a_new_objective(self):
         session = self._session()
         session.learning_path = [
@@ -470,7 +510,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '"reason":"进入下一目标",'
             '"next_node":{"kind":"main","objective":"比较方法",'
             '"prompt":"以下哪一项最准确地描述了当前目标？",'
-            '"options":["选项一","选项二"]}}'
+            '"options":["选项一","选项二"],"correct_option":"选项一"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[decision_json, decision_json]):
@@ -503,7 +543,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '"reason":"进入下一目标",'
             '"next_node":{"kind":"main","objective":"比较方法",'
             '"prompt":"比较方法时应优先关注什么？",'
-            '"options":["任务目标","随机猜测"]}}'
+            '"options":["任务目标","随机猜测"],"correct_option":"任务目标"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[repeated, advance]) as api:
@@ -537,7 +577,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"not_mastered","action":"insert_remediation",'
             '"reason":"继续拆分",'
             '"next_node":{"kind":"remediation","objective":"更小目标",'
-            '"prompt":"更小的问题","options":["选项一","选项二"]}}'
+            '"prompt":"更小的问题","options":["选项一","选项二"],"correct_option":"选项一"}}'
         )
         keep_current = (
             '{"answer_performance":"not_mastered","action":"continue_current",'
@@ -558,7 +598,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '"reason":"补充说明",'
             '"next_node":{"kind":"remediation","objective":"识别目标",'
             '"prompt":"题目要求什么？",'
-            '"options":["选项一","选项二"]}}'
+            '"options":["选项一","选项二"],"correct_option":"选项一"}}'
         )
 
         with patch.object(
@@ -594,6 +634,7 @@ class DiscussionDecisionTests(unittest.TestCase):
                     "objective": "识别目标",
                     "prompt": "请选择讲解方式。",
                     "options": ["换一种说明", "举例说明"],
+                    "correct_option": "换一种说明",
                 },
             ),
             "选项一",
@@ -661,7 +702,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         teaching = (
             '{"explanation":"PCA先把重复的信息压缩成少数关键方向。",'
             '"check_question":"PCA压缩数据时主要保留什么？",'
-            '"options":["关键变化方向","所有重复信息","随机删除样本"]}'
+            '"options":["关键变化方向","所有重复信息","随机删除样本"],"correct_option":"关键变化方向"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching) as llm:
@@ -708,7 +749,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"explanation":"PCA保留最能代表差异的方向。",'
             '"example":"整理体检指标时，可把多个高度相关指标归纳成一个综合方向。",'
             '"check_question":"这个例子中的综合方向主要保留什么？",'
-            '"options":["指标的共同变化","每项指标的名称","随机噪声"]}'
+            '"options":["指标的共同变化","每项指标的名称","随机噪声"],"correct_option":"指标的共同变化"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching) as llm:
@@ -733,7 +774,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         teaching = (
             '{"explanation":"方差表示数据围绕平均值的分散程度。",'
             '"check_question":"这部分现在清楚了吗？",'
-            '"options":["理解了","还不理解"]}'
+            '"options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "evaluate_answer", side_effect=AssertionError("不应把提问当作答题")), patch.object(
@@ -760,7 +801,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         teaching = (
             '{"explanation":"解释变量是模型中的输入特征。",'
             '"check_question":"这部分清楚了吗？",'
-            '"options":["理解了","还不理解"]}'
+            '"options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "evaluate_answer", side_effect=AssertionError("输入框内容不应进入判分")), patch.object(
@@ -780,7 +821,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session.discussion_plan = create_initial_plan("理解方差", "方差表示什么？")
         teaching = (
             '{"explanation":"方差表示数据围绕平均值的分散程度。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching):
@@ -799,12 +840,12 @@ class DiscussionDecisionTests(unittest.TestCase):
         session.discussion_plan = create_initial_plan("理解方差", "方差表示什么？")
         first_teaching = (
             '{"explanation":"方差表示数据围绕平均值的分散程度。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
         alternate_teaching = (
             '{"explanation":"把每个人的分数和班级平均分比较，差得越分散，方差越大。",'
             '"example":"例如 60、70、80 比 69、70、71 更分散，所以前者方差更大。",'
-            '"check_question":"这个例子清楚了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"这个例子清楚了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "call_llm", side_effect=[first_teaching, alternate_teaching]) as llm:
@@ -819,7 +860,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session.discussion_plan = create_initial_plan("理解方差", "方差表示什么？")
         teaching = (
             '{"explanation":"方差表示数据围绕平均值的分散程度。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "call_llm", side_effect=[None, teaching]) as llm:
@@ -833,7 +874,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session.discussion_plan = create_initial_plan("理解方差", "方差表示什么？")
         teaching = (
             '{"explanation":"方差表示数据围绕平均值的分散程度。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
             '\n补充说明'
         )
 
@@ -848,7 +889,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session.discussion_plan = create_initial_plan("理解PCA的用途", "PCA主要用于什么？")
         teaching = (
             '```json\n{"explanation":"PCA用于在尽量保留主要信息的同时减少数据特征。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}\n```'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}\n```'
         )
 
         with patch.object(session, "call_llm", return_value=teaching) as llm:
@@ -888,7 +929,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         recovered = (
             '{"explanation":"主成分按特征值从大到小选择。",'
             '"check_question":"选择主成分时通常优先保留哪一类方向？",'
-            '"options":["特征值较大的方向","特征值最小的方向","随机方向"]}'
+            '"options":["特征值较大的方向","特征值最小的方向","随机方向"],"correct_option":"特征值较大的方向"}'
         )
 
         with patch.object(session, "call_llm", side_effect=["{", "{", recovered]):
@@ -939,10 +980,10 @@ class DiscussionDecisionTests(unittest.TestCase):
             "signals_used": ["explicit_feedback", "answer_performance"],
         }
         invalid_recoveries = (
-            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["",""]}',
-            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["重要方向","重要方向"]}',
-            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["理解了","还不理解"]}',
-            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["先看一个具体例子","先回顾关键结论"]}',
+            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["",""],"correct_option":""}',
+            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["重要方向","重要方向"],"correct_option":"重要方向"}',
+            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["理解了","还不理解"],"correct_option":"理解了"}',
+            '{"explanation":"主成分保留重要方向。","check_question":"应保留什么？","options":["先看一个具体例子","先回顾关键结论"],"correct_option":"先看一个具体例子"}',
         )
 
         for recovery in invalid_recoveries:
@@ -969,7 +1010,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         recovery = (
             '{"explanation":"主成分优先保留特征值较大的方向。",'
             '"check_question":"哪个方向通常优先保留？",'
-            '"options":["特征值较大的方向","特征值较小的方向","随机方向"]}'
+            '"options":["特征值较大的方向","特征值较小的方向","随机方向"],"correct_option":"特征值较大的方向"}'
         )
 
         with patch.object(session, "call_llm", side_effect=["{", "{", recovery]):
@@ -1042,7 +1083,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"partial","action":"insert_remediation",'
             '"reason":"拆小目标","next_node":{"kind":"remediation",'
             '"objective":"补充依据","prompt":"依据是什么？",'
-            '"options":["依据一","依据二","依据三"]}}'
+            '"options":["依据一","依据二","依据三"],"correct_option":"依据一"}}'
         )
 
         with patch.object(session, "call_llm", return_value=output):
@@ -1071,7 +1112,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"partial","action":"insert_probe",'
             '"reason":"继续确认","next_node":{"kind":"probe",'
             '"objective":"验证理解","prompt":"如果只保留两个指标，你会优先保留能反映哪类变化的信息？",'
-            '"options":["主要变化","随机噪声","重复信息"]}}'
+            '"options":["主要变化","随机噪声","重复信息"],"correct_option":"主要变化"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[incomplete, repaired]) as api:
@@ -1101,7 +1142,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         recovery = (
             '{"explanation":"降维会保留数据中的主要变化。",'
             '"check_question":"降维时应优先保留哪类信息？",'
-            '"options":["主要变化","随机噪声","重复信息"]}'
+            '"options":["主要变化","随机噪声","重复信息"],"correct_option":"主要变化"}'
         )
 
         with patch.object(session, "call_llm", side_effect=[incomplete, incomplete, recovery]) as api:
@@ -1131,7 +1172,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         recovery = (
             '{"explanation":"降维会保留数据中的主要变化。",'
             '"check_question":"降维时应优先保留哪类信息？",'
-            '"options":["主要变化","随机噪声","重复信息"]}'
+            '"options":["主要变化","随机噪声","重复信息"],"correct_option":"主要变化"}'
         )
 
         with patch.object(session, "call_llm", side_effect=[invalid, invalid, recovery]) as api:
@@ -1191,7 +1232,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session = self._session()
         outputs = [
             "## 初始解题步骤\n步骤1：请列出理解 PCA 所需的三个关键术语。",
-            "## 初始解题步骤\n步骤1：你目前对 PCA 的熟悉程度是哪一种？\nA. 完全没学过\nB. 听说过\nC. 能解释基本用途",
+            "## 初始解题步骤\n步骤1：你目前对 PCA 的熟悉程度是哪一种？\nA. 完全没学过\nB. 听说过\nC. 能解释基本用途\n正确选项：完全没学过",
         ]
 
         with patch.object(session, "build_system_prompt"), patch.object(
@@ -1209,7 +1250,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         session = self._session()
         outputs = [
             "## 初始解题步骤\n步骤1：一个数据集有 100 个样本，每个样本有 5 个测量值，维度通常指什么？",
-            "## 初始解题步骤\n步骤1：一个数据集有 100 个样本，每个样本有 5 个测量值，维度通常指什么？\nA. 样本数量\nB. 每个样本的特征数量\nC. 测量的总次数",
+            "## 初始解题步骤\n步骤1：一个数据集有 100 个样本，每个样本有 5 个测量值，维度通常指什么？\nA. 样本数量\nB. 每个样本的特征数量\nC. 测量的总次数\n正确选项：每个样本的特征数量",
         ]
 
         with patch.object(session, "build_system_prompt"), patch.object(
@@ -1221,11 +1262,83 @@ class DiscussionDecisionTests(unittest.TestCase):
         self.assertEqual(["样本数量", "每个样本的特征数量", "测量的总次数"], session.current_options)
         self.assertEqual(2, api.call_count)
 
+    def test_initial_step_rejects_an_incorrect_euclidean_distance_answer_key(self):
+        self.answer_key_verifier.stop()
+        session = self._session()
+        incorrect = (
+            "## 初始解题步骤\n步骤1：请判断以下关于两点间欧氏距离的描述，哪一项是正确的？\n"
+            "A、点(1,2)和点(4,6)的欧氏距离是5\n"
+            "B、点(1,2)和点(4,6)的欧氏距离是7\n"
+            "C、点(1,2)和点(4,6)的欧氏距离是√37\n"
+            "正确选项：C、点(1,2)和点(4,6)的欧氏距离是√37"
+        )
+        corrected = incorrect.replace(
+            "正确选项：C、点(1,2)和点(4,6)的欧氏距离是√37",
+            "正确选项：A、点(1,2)和点(4,6)的欧氏距离是5",
+        )
+
+        with patch.object(session, "build_system_prompt"), patch.object(
+            session, "call_llm", side_effect=[incorrect, corrected]
+        ) as api:
+            step = session.generate_initial_step("解释 K-means 中的欧氏距离")
+
+        self.assertIn("欧氏距离", step)
+        self.assertEqual("点(1,2)和点(4,6)的欧氏距离是5", session.current_correct_option)
+        self.assertEqual(2, api.call_count)
+
+    def test_initial_step_retries_when_independent_answer_check_rejects_key(self):
+        self.answer_key_verifier.stop()
+        session = self._session()
+        rejected = (
+            "## 初始解题步骤\n步骤1：无监督学习通常依据什么发现结构？\n"
+            "A、人工给出的类别标签\nB、数据自身的模式\nC、标准答案\n"
+            "正确选项：A、人工给出的类别标签"
+        )
+        corrected = rejected.replace(
+            "正确选项：A、人工给出的类别标签",
+            "正确选项：B、数据自身的模式",
+        )
+
+        with patch.object(session, "build_system_prompt"), patch.object(
+            session,
+            "call_llm",
+            side_effect=[
+                rejected,
+                '{"verdict":"invalid","reason":"无监督学习不使用人工类别标签"}',
+                corrected,
+                '{"verdict":"valid","reason":"答案唯一且正确"}',
+            ],
+        ) as api:
+            session.generate_initial_step("解释无监督学习")
+
+        self.assertEqual("数据自身的模式", session.current_correct_option)
+        self.assertEqual(4, api.call_count)
+
+    def test_initial_step_accepts_letter_prefixed_correct_option(self):
+        session = self._session()
+        initial_step = (
+            "## 初始解题步骤\n步骤1：无监督学习的数据通常具有什么特点？\n"
+            "A. 每条样本都有人工给出的类别标签\n"
+            "B. 仅包含样本的原始特征\n"
+            "C. 必须提供标准答案\n"
+            "正确选项：B、仅包含样本的原始特征"
+        )
+
+        with patch.object(session, "build_system_prompt"), patch.object(
+            session, "call_llm", return_value=initial_step
+        ) as api:
+            step = session.generate_initial_step("解释无监督学习")
+
+        self.assertEqual("步骤1：无监督学习的数据通常具有什么特点？", step)
+        self.assertEqual(["每条样本都有人工给出的类别标签", "仅包含样本的原始特征", "必须提供标准答案"], session.current_options)
+        self.assertEqual("仅包含样本的原始特征", session.current_correct_option)
+        self.assertEqual(1, api.call_count)
+
     def test_initial_step_retries_an_empty_model_response(self):
         session = self._session()
         valid_step = (
             "## 初始解题步骤\n步骤1：PCA主要用于什么？\n"
-            "A. 降低特征维度\nB. 增加样本数\nC. 预测标签"
+            "A. 降低特征维度\nB. 增加样本数\nC. 预测标签\n正确选项：降低特征维度"
         )
 
         with patch.object(session, "build_system_prompt"), patch.object(
@@ -1252,7 +1365,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         teaching = (
             '{"explanation":"协方差描述两个变量是否倾向于一起变化，正值通常表示同向变化，负值通常表示反向变化。",'
             '"check_question":"正协方差通常表示两个变量怎样变化？",'
-            '"options":["倾向同向变化","倾向反向变化","彼此完全相同"]}'
+            '"options":["倾向同向变化","倾向反向变化","彼此完全相同"],"correct_option":"倾向同向变化"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching) as api:
@@ -1278,7 +1391,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         teaching = (
             '{"explanation":"协方差用来概括两个变量共同变化的方向。",'
             '"check_question":"协方差主要描述什么？",'
-            '"options":["两个变量的共同变化","单个变量的名称","样本的排列顺序"]}'
+            '"options":["两个变量的共同变化","单个变量的名称","样本的排列顺序"],"correct_option":"两个变量的共同变化"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching) as api:
@@ -1303,11 +1416,11 @@ class DiscussionDecisionTests(unittest.TestCase):
         }
         invalid = (
             '{"explanation":"在教学规划中，标准化用于消除量纲差异。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
         valid = (
             '{"explanation":"标准化用于消除不同特征的量纲和数值范围差异。",'
-            '"check_question":"理解了吗？","options":["理解了","还不理解"]}'
+            '"check_question":"理解了吗？","options":["理解了","还不理解"],"correct_option":"理解了"}'
         )
 
         with patch.object(session, "call_llm", side_effect=[invalid, valid]) as api:
@@ -1332,13 +1445,13 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"partial","action":"insert_probe","reason":"继续确认",'
             '"next_node":{"kind":"probe","objective":"应用方差",'
             '"prompt":"哪个方向保留的信息更多？（根据学习者认知负荷采用最小提示原则）",'
-            '"options":["方差较大方向","方差较小方向","随机方向"]}}'
+            '"options":["方差较大方向","方差较小方向","随机方向"],"correct_option":"方差较大方向"}}'
         )
         valid = (
             '{"answer_performance":"partial","action":"insert_probe","reason":"继续确认",'
             '"next_node":{"kind":"probe","objective":"应用方差",'
             '"prompt":"两个投影方向中，哪个方向的数据更分散、保留的变化更多？",'
-            '"options":["方差较大方向","方差较小方向","随机方向"]}}'
+            '"options":["方差较大方向","方差较小方向","随机方向"],"correct_option":"方差较大方向"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[invalid, valid]) as api:
@@ -1367,13 +1480,13 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"协方差矩阵计算",'
             '"prompt":"在教学规划中，这一步位于标准化之后。协方差矩阵有什么作用？",'
-            '"options":["描述特征关系","统一量纲","删除样本","不知道"]}}'
+            '"options":["描述特征关系","统一量纲","删除样本","不知道"],"correct_option":"描述特征关系"}}'
         )
         valid = (
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"协方差矩阵计算",'
             '"prompt":"协方差矩阵描述特征之间的共同变化。它的主要作用是什么？",'
-            '"options":["描述特征关系","统一量纲","删除样本","不知道"]}}'
+            '"options":["描述特征关系","统一量纲","删除样本","不知道"],"correct_option":"描述特征关系"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[invalid, valid]) as api:
@@ -1398,13 +1511,13 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"partial","action":"insert_probe","reason":"继续确认",'
             '"next_node":{"kind":"probe","objective":"理解协方差矩阵",'
             '"prompt":"协方差矩阵在 PCA 中的关键作用之一是什么？",'
-            '"options":["构造主成分方向","统一量纲","删除异常值","不知道"]}}'
+            '"options":["构造主成分方向","统一量纲","删除异常值","不知道"],"correct_option":"构造主成分方向"}}'
         )
         distinct = (
             '{"answer_performance":"partial","action":"insert_probe","reason":"补足缺失点",'
             '"next_node":{"kind":"probe","objective":"理解协方差矩阵",'
             '"prompt":"协方差矩阵的非对角元素描述什么？",'
-            '"options":["两个特征共同变化","单个特征均值","样本数量","不知道"]}}'
+            '"options":["两个特征共同变化","单个特征均值","样本数量","不知道"],"correct_option":"两个特征共同变化"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[duplicate, distinct]) as api:
@@ -1434,13 +1547,13 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"主成分选择与投影",'
             '"prompt":"应如何选择主成分数量？",'
-            '"options":["累计解释方差比","随机选择","保留全部","不知道"]}}'
+            '"options":["累计解释方差比","随机选择","保留全部","不知道"],"correct_option":"累计解释方差比"}}'
         )
         expected = (
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"特征值与特征向量分析",'
             '"prompt":"特征值表示对应方向上的方差大小。较大的特征值说明什么？",'
-            '"options":["保留更多变化","均值更大","样本更多","不知道"]}}'
+            '"options":["保留更多变化","均值更大","样本更多","不知道"],"correct_option":"保留更多变化"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[skipped, expected]) as api:
@@ -1470,13 +1583,13 @@ class DiscussionDecisionTests(unittest.TestCase):
             '"next_node":{"kind":"main","objective":"特征值与特征向量",'
             '"prompt":"特征值越大表示该方向方差越大。是否理解特征值与特征向量在PCA中的意义？",'
             '"options":["理解了，特征值大说明该方向方差大",'
-            '"认为特征向量长度决定重要性","认为所有方向应同等对待"]}}'
+            '"认为特征向量长度决定重要性","认为所有方向应同等对待"],"correct_option":"理解了，特征值大说明该方向方差大"}}'
         )
         valid = (
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"特征值与特征向量",'
             '"prompt":"特征值可以用来衡量一个方向的信息量。在PCA中，哪个方向应优先保留？",'
-            '"options":["特征值较大的方向","特征值较小的方向","任意方向"]}}'
+            '"options":["特征值较大的方向","特征值较小的方向","任意方向"],"correct_option":"特征值较大的方向"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[invalid, valid]) as api:
@@ -1507,7 +1620,7 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"特征值与特征向量分析",'
             '"prompt":"较大的特征值说明什么？",'
-            '"options":["保留更多变化","均值更大","样本更多","不知道"]}}'
+            '"options":["保留更多变化","均值更大","样本更多","不知道"],"correct_option":"保留更多变化"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[premature, expected]) as api:
@@ -1532,7 +1645,7 @@ class DiscussionDecisionTests(unittest.TestCase):
         extra = (
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"额外步骤",'
-            '"prompt":"再回答一道题？","options":["A","B","C","不知道"]}}'
+            '"prompt":"再回答一道题？","options":["A","B","C","不知道"],"correct_option":"A"}}'
         )
         complete = '{"answer_performance":"mastered","action":"complete_discussion","reason":"规划已完成"}'
 
@@ -1562,19 +1675,54 @@ class DiscussionDecisionTests(unittest.TestCase):
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"特征值与特征向量分析",'
             '"prompt":"协方差矩阵在 PCA 中的关键作用之一是什么？",'
-            '"options":["寻找方向","统一量纲","删除样本","不知道"]}}'
+            '"options":["寻找方向","统一量纲","删除样本","不知道"],"correct_option":"寻找方向"}}'
         )
         distinct = (
             '{"answer_performance":"mastered","action":"advance_main","reason":"继续",'
             '"next_node":{"kind":"main","objective":"特征值与特征向量分析",'
             '"prompt":"较大的特征值说明对应方向具有什么特点？",'
-            '"options":["方差更大","均值更大","样本更多","不知道"]}}'
+            '"options":["方差更大","均值更大","样本更多","不知道"],"correct_option":"方差更大"}}'
         )
 
         with patch.object(session, "call_llm", side_effect=[duplicate, distinct]) as api:
             decision = session.plan_next_action(context)
 
         self.assertIn("特征值", decision.next_node.prompt)
+        self.assertEqual(2, api.call_count)
+
+    def test_advance_retries_when_candidate_reuses_the_just_mastered_answer(self):
+        session = self._session()
+        session.current_options = ["最长延伸方向", "最密集聚集方向", "最短厚度方向"]
+        context = PlanningContext.model_validate({
+            "question": "给我讲一下机器学习中的 PCA",
+            "active_objective": "主成分的定义与求解原理",
+            "active_prompt": "第一主成分方向在二维散点图中对应什么几何特性？",
+            "completed_summary": [],
+            "explicit_feedback": "最长延伸方向",
+            "answer_performance": "mastered",
+            "answer_reason": "回答正确",
+            "teaching_plan": [
+                {"step_number": 1, "title": "主成分的定义与求解原理"},
+                {"step_number": 2, "title": "PCA低维表示的构造过程"},
+            ],
+            "signals_used": ["explicit_feedback", "answer_performance"],
+        })
+        repeated = (
+            '{"explanation":"PCA会把数据投影到变化最明显的方向。",'
+            '"check_question":"第一主成分方向最直接反映数据点云的哪项几何特性？",'
+            '"options":["最长延伸方向","最密集聚集方向","最短厚度方向"],"correct_option":"最长延伸方向"}'
+        )
+        distinct = (
+            '{"explanation":"选取前 k 个主成分组成投影矩阵，再把中心化数据投影到该矩阵上，'
+            '得到低维表示。",'
+            '"check_question":"构造 PCA 的低维表示时，数据应如何变换？",'
+            '"options":["投影到前 k 个主成分张成的子空间","随机删除若干样本","按原坐标直接截取前 k 列"],"correct_option":"投影到前 k 个主成分张成的子空间"}'
+        )
+
+        with patch.object(session, "call_llm", side_effect=[repeated, distinct]) as api:
+            decision = session._advance_after_mastered(context)
+
+        self.assertIn("如何变换", decision.next_node.prompt)
         self.assertEqual(2, api.call_count)
 
 
@@ -1679,6 +1827,15 @@ class DiscussionPlanningContextTests(unittest.TestCase):
 
 
 class DiscussionFeedbackPipelineTests(unittest.TestCase):
+    def setUp(self):
+        self.answer_key_verifier = patch.object(
+            DiscussionSystem,
+            "_verify_generated_objective",
+            return_value=None,
+        )
+        self.answer_key_verifier.start()
+        self.addCleanup(self.answer_key_verifier.stop)
+
     def test_feedback_response_keeps_objective_choice_correctness(self):
         response = DiscussionFeedbackResponse.model_validate({
             "status": "main_step",
@@ -1770,6 +1927,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
                     "认为特征向量长度决定重要性",
                     "认为所有方向应同等对待",
                 ],
+                "correct_option": "理解了，特征值大说明该方向方差大",
             },
         )
 
@@ -1851,7 +2009,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         recovery = (
             '{"explanation":"比较方法时先看各自解决的任务。",'
             '"check_question":"比较方法时应先关注什么？",'
-            '"options":["任务目标","随机猜测","界面颜色"]}'
+            '"options":["任务目标","随机猜测","界面颜色"],"correct_option":"任务目标"}'
         )
 
         with patch.object(
@@ -1875,12 +2033,12 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         repeated = (
             '{"explanation":"换一种说法回顾当前内容。",'
             '"check_question":"题目要求什么？",'
-            '"options":["目标","方法","结果"]}'
+            '"options":["目标","方法","结果"],"correct_option":"目标"}'
         )
         next_goal = (
             '{"explanation":"比较方法时先看各自解决的任务。",'
             '"check_question":"比较两种方法时应先关注什么？",'
-            '"options":["任务目标","界面颜色","随机顺序"]}'
+            '"options":["任务目标","界面颜色","随机顺序"],"correct_option":"任务目标"}'
         )
 
         with patch.object(
@@ -1905,7 +2063,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         repeated = (
             '{"explanation":"换一种说法回顾当前内容。",'
             '"check_question":"题目要求什么？",'
-            '"options":["目标","方法","结果"]}'
+            '"options":["目标","方法","结果"],"correct_option":"目标"}'
         )
 
         with patch.object(
@@ -1928,7 +2086,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         recovery = (
             '{"explanation":"比较方法时先看任务目标。",'
             '"check_question":"比较方法时应先关注什么？",'
-            '"options":["任务目标","随机猜测","界面颜色"]}'
+            '"options":["任务目标","随机猜测","界面颜色"],"correct_option":"任务目标"}'
         )
 
         with patch.object(
@@ -1950,7 +2108,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         teaching = (
             '{"explanation":"行表示一个特征，列也表示一个特征。",'
             '"check_question":"协方差矩阵中对角线上的值表示什么？",'
-            '"options":["方差","均值","样本数","不知道"]}'
+            '"options":["方差","均值","样本数","不知道"],"correct_option":"方差"}'
         )
 
         with patch.object(session, "call_llm", return_value=teaching):
@@ -2004,7 +2162,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
         recovery = (
             '{"explanation":"降维是用更少的指标保留数据中最重要的变化。",'
             '"check_question":"减少重复指标主要保留什么？",'
-            '"options":["重要变化","随机噪声","重复信息"]}'
+            '"options":["重要变化","随机噪声","重复信息"],"correct_option":"重要变化"}'
         )
 
         with patch.object(session, "evaluate_answer", return_value=evaluation), patch.object(
@@ -2034,6 +2192,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
                     "objective": "主成分选择",
                     "prompt": "你想先从哪个角度继续？",
                     "options": ["先回顾关键结论", "先看一个具体例子", "先拆成更小的问题"],
+                    "correct_option": "先回顾关键结论",
                 },
             ),
             "已有初步理解",
@@ -2044,7 +2203,7 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
             '{"explanation":"主成分会优先保留特征值较大的方向。",'
             '"example":"多个成绩指标可以归纳出共同变化方向。",'
             '"check_question":"选择主成分时通常优先保留哪一类方向？",'
-            '"options":["特征值较大的方向","特征值较小的方向","随机方向"]}'
+            '"options":["特征值较大的方向","特征值较小的方向","随机方向"],"correct_option":"特征值较大的方向"}'
         )
 
         with patch.object(
@@ -2107,6 +2266,15 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
 
 
 class DiscussionPlanningApiTests(unittest.TestCase):
+    def setUp(self):
+        self.answer_key_verifier = patch.object(
+            DiscussionSystem,
+            "_verify_generated_objective",
+            return_value=None,
+        )
+        self.answer_key_verifier.start()
+        self.addCleanup(self.answer_key_verifier.stop)
+
     def tearDown(self):
         session_manager.sessions.clear()
         session_manager.step_generation_locks.clear()
@@ -2172,7 +2340,7 @@ class DiscussionPlanningApiTests(unittest.TestCase):
         )
         initial = (
             "## 初始解题步骤\n步骤1：你以前接触过降维吗？"
-            "\nA. 完全没学过\nB. 听说过但不了解\nC. 了解基本用途"
+            "\nA. 完全没学过\nB. 听说过但不了解\nC. 了解基本用途\n正确选项：完全没学过"
         )
         request = DiscussionInitRequest(
             processedQuestion="什么是 PCA",
@@ -2205,7 +2373,7 @@ class DiscussionPlanningApiTests(unittest.TestCase):
             '"core_mathematical_thought":"数量合并",'
             '"related_method":"加法运算"}}'
         )
-        initial = "## 初始解题步骤\n步骤1：1+1等于多少？\n- A. 1\n- B. 2\n- C. 3\n- D. 不知道"
+        initial = "## 初始解题步骤\n步骤1：1+1等于多少？\n- A. 1\n- B. 2\n- C. 3\n- D. 不知道\n正确选项：2"
         request = DiscussionInitRequest(
             processedQuestion="学习加法",
             personalizedMode=False,
@@ -2407,6 +2575,7 @@ class DiscussionPlanningRestoreTests(unittest.TestCase):
             "pending_user_question": "术语是什么意思",
             "pending_resume_step": "步骤1：原教学问题？",
             "pending_resume_options": ["答案一", "答案二", "不知道"],
+            "pending_resume_correct_option": "答案一",
             "current_options": ["理解了", "还不理解"],
         })
 
@@ -2428,6 +2597,7 @@ class DiscussionPlanningRestoreTests(unittest.TestCase):
 
         self.assertEqual("步骤1：原教学问题？", resumed["step"])
         self.assertEqual(["答案一", "答案二"], session.current_options)
+        self.assertEqual("答案一", session.current_correct_option)
         self.assertEqual(restored_plan, session.discussion_plan.model_dump())
 
     def test_restore_infers_active_node_for_older_plan_without_active_node_id(self):

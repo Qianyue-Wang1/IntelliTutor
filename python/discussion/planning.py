@@ -130,6 +130,13 @@ class NextPlanNode(BaseModel):
     objective: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     options: list[str] = Field(default_factory=list)
+    correct_option: str = ""
+
+    @model_validator(mode="after")
+    def validate_correct_option(self):
+        if self.options and self.correct_option.strip() not in {option.strip() for option in self.options}:
+            raise ValueError("correct_option must match one of the options")
+        return self
 
 
 class PlanningDecision(BaseModel):
@@ -141,6 +148,7 @@ class PlanningDecision(BaseModel):
     next_node: Optional[NextPlanNode] = None
     recovery_prompt: Optional[str] = Field(default=None, min_length=1, exclude=True)
     recovery_options: list[str] = Field(default_factory=list, exclude=True)
+    recovery_correct_option: Optional[str] = Field(default=None, min_length=1, exclude=True)
 
     @model_validator(mode="after")
     def validate_next_node(self):
@@ -151,6 +159,11 @@ class PlanningDecision(BaseModel):
             raise ValueError(f"{self.action} does not accept next_node")
         if self.recovery_prompt is not None and self.action != "continue_current":
             raise ValueError("recovery_prompt requires continue_current")
+        if self.recovery_correct_option is not None and (
+            self.recovery_correct_option.strip()
+            not in {option.strip() for option in self.recovery_options}
+        ):
+            raise ValueError("recovery_correct_option must match one of the recovery options")
         if self.action in {"advance_main", "complete_discussion"} and self.answer_performance != "mastered":
             raise ValueError(f"{self.action} requires mastered answer performance")
         return self
@@ -170,6 +183,13 @@ class TeachingRecovery(BaseModel):
     example: Optional[str] = None
     check_question: str = Field(min_length=1)
     options: list[str] = Field(min_length=2)
+    correct_option: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_correct_option(self):
+        if self.correct_option.strip() not in {option.strip() for option in self.options}:
+            raise ValueError("correct_option must match one of the options")
+        return self
 
 
 class PlanningContext(BaseModel):
