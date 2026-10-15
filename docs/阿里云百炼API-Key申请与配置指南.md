@@ -22,7 +22,7 @@
 2. 打开[阿里云百炼控制台（华北 2／北京）](https://bailian.console.aliyun.com/?region=cn-beijing)。
 3. 第一次进入时，阅读并同意服务协议，完成百炼开通。
 4. 在控制台确认右上角地域为“华北 2（北京）”。
-5. 打开“免费额度”页面，查看目标模型是否显示剩余额度和到期时间。
+5. 打开左边“费用用量—免费额度”页面，查看目标模型是否显示剩余额度和到期时间。
 
 如果刚开通但暂未看到额度，请等待一段时间后刷新。不要为了重新领取额度重复注册账号：同一实名认证主体不会再次获得新人额度。
 
@@ -54,9 +54,12 @@ notepad .env
 ```dotenv
 QWEN_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/
 QWEN_API_KEY=粘贴你自己的百炼通用APIKey
-QWEN_MODEL_INSTRUCT=qwen3-32b
-QWEN_MODEL_LARGE=qwen3-235b-a22b-2507
+QWEN_MODEL_INSTRUCT=qwen-plus
+QWEN_MODEL_LARGE=qwen-plus
 QWEN_MODEL_SMALL=qwen3-8b
+QWEN_MODEL_VL=
+QWEN_MODEL_VLFAST=
+QWEN_MODEL_REASONING=qwen-plus
 ```
 
 不要修改其他服务商的模型名来“凑齐”配置，也不要把 API Key 放入前端代码。为了保证实验条件可比，若上述任一模型在百炼控制台不可用、没有免费额度或提示无权限，请先联系研究人员确认统一替代模型，不要自行换成其他模型。
