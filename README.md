@@ -2,7 +2,7 @@
 
 这是一个供参与者**在本机自助完成一次或多次机器学习连续学习实验**的 Docker Compose 项目。正常实验不需要管理员逐阶段推进，也不要求参与者创建账号或设置密码：参与者只填写姓名和手机号，按固定顺序完成实验，并在结束后下载自己的 Excel 数据文件。
 
-> 本仓库的运行内容是“无监督学习到大模型自监督预训练”五轮连续学习实验。它不是通用的在线教学平台，也不会在运行时训练或加载 LoRA、Adapter 或本地大模型。
+> 本仓库的运行内容是“无监督学习到大模型自监督预训练”五轮连续学习实验。它不是通用的在线教学平台，应用不训练或加载 LoRA、Adapter；文本推理由独立的本地 vLLM 服务承担。
 
 ## 参与者实际流程
 
@@ -36,12 +36,18 @@
 
 ```powershell
 Copy-Item .env.example .env
-# 编辑 .env：替换所有 CHANGE_ME 值，配置至少一个 LLM 服务商，并设置 EXPERIMENT_MODE=true
+# 编辑 .env：替换所有 CHANGE_ME 值，配置本地 vLLM 地址、密钥和模型名，并设置 EXPERIMENT_MODE=true
 docker compose up -d --build
 docker compose ps
 ```
 
 所有服务显示 `healthy` 后访问 [http://localhost/](http://localhost/)。首次构建需要下载镜像与依赖；若 Docker 报 EOF、TLS 或镜像超时，应先检查网络、Docker Desktop 代理和镜像设置。
+
+## 本地模型与并发
+
+三张 A800 80GB 每卡加载一份 Qwen3-32B FP16，使用 vLLM DP=3、TP=1 的统一接口。Direct、Basic、Full 共用三个副本，所有文本请求只走配置的 vLLM 服务。部署脚本、初始参数、升级注意事项和压测方法见 [vLLM 三卡部署与并发验证](docs/vLLM三卡部署与并发验证.md)。
+
+Python 使用单进程、受控线程池与会话互斥；Java 推理消费者初始并发 6、最大 12。不要直接增加 Python worker 数量。Qwen3-32B 为文本模型，未配置视觉模型时图片接口不可用。
 
 ## 运行边界
 
@@ -81,4 +87,4 @@ docker compose logs --since 10m backend web python
 
 必须提交运行所需的源码、Docker 配置、数据库迁移、依赖清单、`.env.example` 与本 README/部署手册；绝不提交真实 `.env`、API Key、密码、Docker 数据卷、参与者数据或本机构建产物。根目录 `.gitignore` 已覆盖这些常见本地文件，但首次初始化仓库后仍应在提交前逐项检查待提交列表。
 
-建议发布者先创建一个新的、干净的 Git 仓库副本，只加入本 README 中列出的运行目录与配置。当前工作目录本身不含 `.git` 元数据，不能直接执行 `git status` 或 `git push`。
+建议发布者先创建一个新的、干净的 Git 仓库副本，只加入本 README 中列出的运行目录与配置。提交前使用 `git status` 核对改动，不提交运行数据和密钥。

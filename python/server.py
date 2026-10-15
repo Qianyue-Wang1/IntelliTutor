@@ -19,6 +19,8 @@ import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import asyncio
+from contextlib import asynccontextmanager
+from common.concurrency import register_new_session, run_blocking, session_operation, shutdown, startup
 from common.prompt.en.prompt import GEOMETRY_SYSTEM_PROMPT
 from common.prompt.zh.prompt import IMAGE_INPUT_PROMPT, CHECK_INPUT_PROMPT, GEOGRABRA_SYSTEM_PROMPT
 from common.knowledge_analysis import (
@@ -31,7 +33,7 @@ from common.knowledge_analysis import (
 )
 from common.learning_path import LearningPathError, parse_learning_path
 from explanation.prompt.zh.prompt import EXTRACT_KNOWLEDGE_POINTS_PROMPT, GENERATE_STEPS_PROMPT, PARSE_USER_IDEA_PROMPT, ANALYZE_USER_INTENT_PROMPT
-from tools.llm_api_service import call_llm_async
+from tools.llm_api_service import call_llm_async, close_clients, validate_config
 from discussion.planning import (
     DiscussionPlan,
     PlanningError,
@@ -42,7 +44,18 @@ from discussion.planning import (
 )
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app):
+    validate_config()
+    startup()
+    try:
+        yield
+    finally:
+        await shutdown()
+        await close_clients()
+
+
+app = FastAPI(lifespan=lifespan)
 
 STEP_GENERATION_TIMEOUT_SECONDS = 600
 
@@ -130,7 +143,8 @@ class DirectSession:
         self.experiment_run_id = None
 
 
-def _direct_text_only(content: str) -> str:
+def _direct_text_only(content: str | None) -> str:
+    content = content or ""
     def html_image_label(match: re.Match) -> str:
         alt = re.search(r'\balt\s*=\s*(["\'])(.*?)\1', match.group(0), re.IGNORECASE | re.DOTALL)
         return alt.group(2) if alt else "图示"
@@ -175,6 +189,7 @@ class SessionManager:
             raise ValueError("无效的会话类型")
         
         self.sessions[session_id] = session
+        register_new_session(session_id, lambda: self.delete_session(session_id))
         return session
     
     def get_session(self, session_id):
@@ -488,6 +503,7 @@ edu_platform = EduPlatform()
 session_manager = edu_platform.session_manager
 
 @app.post("/api/v1/direct/init")
+@session_operation
 async def init_direct_session(request: DirectInitRequest):
     question = request.question.strip()
     if not question:
@@ -515,6 +531,7 @@ async def init_direct_session(request: DirectInitRequest):
     return {"code": 200, "message": "success", "data": _direct_session_data(session)}
 
 @app.post("/api/v1/direct/followup")
+@session_operation
 async def direct_followup(request: DirectFollowupRequest):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type != "direct":
@@ -526,12 +543,15 @@ async def direct_followup(request: DirectFollowupRequest):
     prompt = ("请只围绕指定学习任务回答学习者追问，保持已确认事实和标准一致，不要引入无关任务。\n"
               f"指定学习任务：{session.question}\n对话：\n{history}\n学习者：{message}")
     reply = _direct_text_only(await call_llm_async(prompt, model_type="instruct"))
+    if not reply:
+        raise HTTPException(status_code=503, detail="追问生成失败，请稍后重试")
     timestamp = datetime.now().isoformat()
     session.messages.append({"role": "user", "content": message, "time": timestamp, "kind": "followup"})
     session.messages.append({"role": "assistant", "content": reply, "time": timestamp, "kind": "followup_reply"})
     return {"code": 200, "message": "success", "data": _direct_session_data(session)}
 
 @app.get("/api/v1/direct/sessionstate/{session_id}")
+@session_operation
 async def direct_session_state(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type != "direct":
@@ -539,6 +559,7 @@ async def direct_session_state(session_id: str):
     return {"code": 200, "message": "success", "data": _direct_session_data(session)}
 
 @app.post("/api/v1/direct/restoresession")
+@session_operation
 async def restore_direct_session(request: DirectRestoreRequest):
     snapshot = request.snapshot or {}
     session = session_manager.create_session("direct", str(snapshot.get("question", "")),
@@ -551,12 +572,11 @@ async def restore_direct_session(request: DirectRestoreRequest):
 # 通用接口：分析输入是否合法、图片识别问题、图片转代码
 
 @app.post("/api/v1/checkinput", response_model=CheckInputResponse)
+@session_operation
 async def check_input(request: CheckInputRequest):
-    from tools.llm_api_service import call_llm, call_llm_fast
 
     prompt = CHECK_INPUT_PROMPT.format(user_input=request.user_input)
-    llm_response = call_llm(prompt, model_type="small")
-    # llm_response = call_llm_fast(prompt)
+    llm_response = await call_llm_async(prompt, model_type="small")
 
     if not llm_response:
         raise HTTPException(status_code=500, detail="LLM 服务不可用")
@@ -591,15 +611,18 @@ async def check_input(request: CheckInputRequest):
 
 
 @app.post("/api/v1/imginput", response_model=ImgResponse)
+@session_operation
 async def img_input(request: ImgRequest):
     from tools.llm_api_service import call_llm_vl
+    if not os.getenv("VLLM_MODEL_VL", "").strip():
+        raise HTTPException(status_code=503, detail="未配置本地视觉模型，Qwen3-32B 不支持图片输入")
     
     # 处理图像输入
     try:
         img_base64 = request.imgStr
-        llm_response = call_llm_vl(img_base64, type="vl", prompt = IMAGE_INPUT_PROMPT)
+        llm_response = await run_blocking(call_llm_vl, img_base64, type="vl", prompt = IMAGE_INPUT_PROMPT)
         if not llm_response:
-            raise HTTPException(status_code=500, detail=llm_response.message)
+            raise HTTPException(status_code=500, detail="本地视觉模型服务不可用")
         # 安全地解析JSON响应
         try:
             # 处理可能的代码块格式
@@ -644,16 +667,21 @@ async def img_input(request: ImgRequest):
             print(f"原始响应: {llm_response}")
             raise HTTPException(status_code=500, detail=f"图像内容解析失败：JSON格式错误 - {str(e)}")
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"图像输入处理异常: {str(e)}")
         raise HTTPException(status_code=500, detail="图像输入处理失败")
 
 
 @app.post("/api/v1/imgtocode", response_model=Img2CodeResponse)
+@session_operation
 async def img_input(request: ImgRequest):
     from tools.llm_api_service import call_llm_vl
+    if not os.getenv("VLLM_MODEL_VL", "").strip():
+        raise HTTPException(status_code=503, detail="未配置本地视觉模型，Qwen3-32B 不支持图片输入")
 
-    response = call_llm_vl(request.imgStr, type="vl", system_prompt = GEOGRABRA_SYSTEM_PROMPT, prompt = "请使用 GeoGebra 中的相关命令，以交互方式重现此图像中的几何图形或函数图像。仅输出 JSON 数组。")
+    response = await run_blocking(call_llm_vl, request.imgStr, type="vl", system_prompt = GEOGRABRA_SYSTEM_PROMPT, prompt = "请使用 GeoGebra 中的相关命令，以交互方式重现此图像中的几何图形或函数图像。仅输出 JSON 数组。")
 
     try:
         # 有时 LLM 可能会把数组包在一个对象里，比如 {"commands": [...]}，
@@ -716,6 +744,7 @@ async def _apply_explanation_knowledge_analysis(explanation_session, response: s
 
 # 初始化API，返回问题相关知识点和解题步骤
 @app.post("/api/v1/explanation/init", response_model=InitState)
+@session_operation
 async def init_explanation_session(request: InitRequest):
     t_start = time.time()
     print(f"[INIT] 收到请求，时间: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
@@ -814,8 +843,8 @@ async def init_explanation_session(request: InitRequest):
         print(f"[INIT] 开始调用: 用户意图 → 解题步骤 (+{t0 - t_start:.2f}s)")
         prompt = ANALYZE_USER_INTENT_PROMPT.format(question=request.processedQuestion, user_input=parsed_content)
         if explanationSession.cross_session_enabled:
-            explanationSession.build_personalized_system_prompt()
-        llm_response = explanationSession.call_llm(prompt)
+            await run_blocking(explanationSession.build_personalized_system_prompt)
+        llm_response = await explanationSession.call_llm_async(prompt)
         print(llm_response)
         print(f"[INIT] 解题步骤生成完成，耗时 {time.time() - t0:.2f}s")
         if not llm_response:
@@ -839,9 +868,9 @@ async def init_explanation_session(request: InitRequest):
             )
             print(f"[INIT] 并行调用完成，耗时 {time.time() - t0:.2f}s")
         else:
-            knowledge_point_response = explanationSession.call_llm(knowledge_point_prompt)
-            explanationSession.build_personalized_system_prompt()
-            solving_steps_response = explanationSession.call_llm(solving_steps_prompt)
+            knowledge_point_response = await explanationSession.call_llm_async(knowledge_point_prompt)
+            await run_blocking(explanationSession.build_personalized_system_prompt)
+            solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
         
         # 处理知识点分析结果
         if not knowledge_point_response:
@@ -860,10 +889,7 @@ async def init_explanation_session(request: InitRequest):
             if not solving_steps_response:
                 if attempt < max_retries:
                     print(f"[INIT] 步骤生成返回空，第 {attempt} 次重试...")
-                    if not explanationSession.cross_session_enabled:
-                        solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
-                    else:
-                        solving_steps_response = explanationSession.call_llm(solving_steps_prompt)
+                    solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
                     continue
                 session_manager.delete_session(session.session_id)
                 raise HTTPException(status_code=500, detail="步骤解析失败")
@@ -877,10 +903,7 @@ async def init_explanation_session(request: InitRequest):
                 print(f"[INIT] parse_solving_steps 失败（第 {attempt} 次）: {e}")
                 if attempt < max_retries:
                     print(f"[INIT] 重新调用 LLM 生成步骤，第 {attempt + 1} 次尝试...")
-                    if not explanationSession.cross_session_enabled:
-                        solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
-                    else:
-                        solving_steps_response = explanationSession.call_llm(solving_steps_prompt)
+                    solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
                 else:
                     session_manager.delete_session(session.session_id)
                     raise HTTPException(status_code=500, detail=f"步骤解析失败（已重试 {max_retries} 次）: {e}")
@@ -928,6 +951,7 @@ async def init_explanation_session(request: InitRequest):
 
 # 获取会话列表
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
+@session_operation
 async def get_session_list():
     session_list = session_manager.get_all_sessions()
     
@@ -939,6 +963,7 @@ async def get_session_list():
 
 # 返回当前步骤的分析和选项
 @app.get("/api/v1/explanation/getstep/{session_id}", response_model=StepOptionRequest)
+@session_operation
 async def get_current_step(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type != "explanation":
@@ -1073,6 +1098,7 @@ async def get_current_step(session_id: str):
 
 # 提交用户答案并返回判定与解析；步骤推进由 /advance 单独触发
 @app.post("/api/v1/explanation/commitanswer", response_model=CheckState)
+@session_operation
 async def submit_answer(request: StepOption):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type != "explanation":
@@ -1171,7 +1197,7 @@ async def submit_answer(request: StepOption):
         event_stream = request.behavior_data.get("event_stream") if isinstance(request.behavior_data, dict) else None
         if event_stream:
             try:
-                behavior_result = explanationSession.process_behavior_data(
+                behavior_result = await run_blocking(explanationSession.process_behavior_data,
                     request.behavior_data, user_feedback_text, current_step_context
                 )
             except Exception:
@@ -1200,7 +1226,7 @@ async def submit_answer(request: StepOption):
             f"教师: {current_step_context}\n"
             f"学生: {user_feedback_text}"
         )
-        knowledge_points_annotation = annotate_kc(conversation)
+        knowledge_points_annotation = await run_blocking(annotate_kc, conversation)
 
         # 保存标注结果和认知负荷分析到session
         round_record = {
@@ -1224,7 +1250,7 @@ async def submit_answer(request: StepOption):
     
     if is_correct:
         correct_answer_text = option_list[explanationSession.current_step_true_answer_index]
-        answer_explanation = explanationSession.correct_selection_analysis(
+        answer_explanation = await run_blocking(explanationSession.correct_selection_analysis,
             analysis,
             correct_answer_text,
         )
@@ -1236,7 +1262,7 @@ async def submit_answer(request: StepOption):
         }
         explanationSession.wrong_answer_list.append(wrong_item)
         correct_answer_text = option_list[explanationSession.current_step_true_answer_index]
-        answer_explanation = explanationSession.incorrect_selection_analysis(
+        answer_explanation = await run_blocking(explanationSession.incorrect_selection_analysis,
             analysis, correct_answer_text, option_list[user_index]
         )
 
@@ -1291,6 +1317,7 @@ async def submit_answer(request: StepOption):
     }
 
 @app.post("/api/v1/explanation/advance")
+@session_operation
 async def advance_explanation(request: AdvanceExplanationRequest):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type != "explanation":
@@ -1302,7 +1329,7 @@ async def advance_explanation(request: AdvanceExplanationRequest):
     if explanationSession.in_summary:
         explanationSession.current_step = 0
         if explanationSession.persist_learner_state:
-            explanationSession.knowledge_tracing()
+            await run_blocking(explanationSession.knowledge_tracing)
     else:
         explanationSession.current_step += 1
         if explanationSession.current_step == explanationSession.step_count:
@@ -1313,6 +1340,7 @@ async def advance_explanation(request: AdvanceExplanationRequest):
 
 # 更新会话状态
 @app.post("/api/v1/explanation/updatestate", response_model=StepHistoryResponse)
+@session_operation
 async def update_session_state(request: UpdateState):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type != "explanation":
@@ -1333,6 +1361,7 @@ async def update_session_state(request: UpdateState):
 
 # 获取会话状态
 @app.get("/api/v1/explanation/sessionstate/{session_id}", response_model=SessionState)
+@session_operation
 async def get_session_state(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type != "explanation":
@@ -1391,6 +1420,7 @@ async def get_session_state(session_id: str):
 
 # 删除会话接口
 @app.delete("/api/v1/deletesession/{session_id}", response_model=DeleteSessionResponse)
+@session_operation
 async def delete_session(session_id: str):
     if session_manager.delete_session(session_id):
         return {
@@ -1662,6 +1692,7 @@ def _initialize_discussion_plan(session, initial_prompt: str) -> None:
     _apply_discussion_projection(session)
 
 @app.post("/api/v1/explanation/restoresession", response_model=RestoreSessionResponse)
+@session_operation
 async def restore_explanation_session(request: RestoreSessionRequest):
     snapshot = request.snapshot or {}
     if not isinstance(snapshot, dict):
@@ -1738,6 +1769,7 @@ async def restore_explanation_session(request: RestoreSessionRequest):
     }
 
 @app.post("/api/v1/discussion/restoresession", response_model=RestoreSessionResponse)
+@session_operation
 async def restore_discussion_session(request: RestoreSessionRequest):
     snapshot = request.snapshot or {}
     if not isinstance(snapshot, dict):
@@ -1825,6 +1857,7 @@ async def restore_discussion_session(request: RestoreSessionRequest):
 
 # 初始化讨论系统
 @app.post("/api/v1/discussion/init", response_model=DiscussionInitState)
+@session_operation
 async def init_discussion_session(request: DiscussionInitRequest):
     cross_session_enabled = request.crossSessionEnabled if request.crossSessionEnabled is not None else False
     if cross_session_enabled:
@@ -1849,7 +1882,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
         discussSession.images = [img.dict() for img in request.images] if request.images else []      
 
         # 分析问题
-        analysis = discussSession.analyze_question()
+        analysis = await run_blocking(discussSession.analyze_question)
         knowledge_dict = discussSession.knowledge_dict
 
         knowledge_points = [
@@ -1858,7 +1891,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
         ]
 
         # 生成初始步骤
-        initial_step = discussSession.generate_initial_step(request.processedQuestion)
+        initial_step = await run_blocking(discussSession.generate_initial_step, request.processedQuestion)
         # 截取"步骤1"之后的纯内容，统一拼装
         _m = re.match(r'^步骤\s*1\s*[:：]\s*', initial_step)
         step_content = initial_step[_m.end():] if _m else initial_step
@@ -1930,7 +1963,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
         discussSession.imageCode = request.imageCode if request.imageCode else []
 
         # 分析问题
-        analysis = discussSession.analyze_question()
+        analysis = await run_blocking(discussSession.analyze_question)
         knowledge_dict = discussSession.knowledge_dict
 
         knowledge_points = [
@@ -1939,7 +1972,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
         ]
         
         # 生成初始步骤
-        initial_step = discussSession.generate_initial_step(discussSession.question)
+        initial_step = await run_blocking(discussSession.generate_initial_step, discussSession.question)
         # 截取"步骤1"之后的纯内容，统一拼装
         _m = re.match(r'^步骤\s*1\s*[:：]\s*', initial_step)
         step_content = initial_step[_m.end():] if _m else initial_step
@@ -1984,6 +2017,7 @@ async def init_discussion_session(request: DiscussionInitRequest):
 
 # 提交用户反馈
 @app.post("/api/v1/discussion/feedback", response_model=DiscussionFeedbackState)
+@session_operation
 async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type not in ["discussion"]:
@@ -2000,7 +2034,7 @@ async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
 
     current_time = datetime.now().isoformat()
 
-    response = discussSession.process_feedback(
+    response = await run_blocking(discussSession.process_feedback,
         request.feedback,
         request.behavior_data,
         submission_type=request.submission_type,
@@ -2033,7 +2067,7 @@ async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
         
         # 讨论完成后进行知识追踪评估：分析掌握度变化并更新知识图谱
         if discussSession.persist_learner_state:
-            discussSession.knowledge_tracing()
+            await run_blocking(discussSession.knowledge_tracing)
         
     else:
         ai_message_content = "请继续分析当前步骤，或者提出您的疑问。"
@@ -2071,6 +2105,7 @@ async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
 
 # 获取讨论会话状态
 @app.get("/api/v1/discussion/sessionstate/{session_id}", response_model=DiscussionSessionState)
+@session_operation
 async def get_discussion_session_state(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type not in ["discussion"]:
@@ -2126,13 +2161,14 @@ async def get_discussion_session_state(session_id: str):
     }
 
 @app.post("/api/v1/learnerstate/retry")
+@session_operation
 async def retry_learner_state(request: LearnerStateRetryRequest):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type not in ["explanation", "discussion"]:
         raise HTTPException(status_code=404, detail="会话不存在或类型不匹配")
     if not getattr(session, "persist_learner_state", False):
         raise HTTPException(status_code=400, detail="该会话不保存跨轮 learner state")
-    session.knowledge_tracing()
+    await run_blocking(session.knowledge_tracing)
     return {"code": 200, "message": "success", "data": {
         "session_id": session.session_id,
         "learner_state_status": session.learner_state_status,
@@ -2141,6 +2177,7 @@ async def retry_learner_state(request: LearnerStateRetryRequest):
     }}
 
 @app.get("/api/v1/discussion/knowledgetracing/{session_id}")
+@session_operation
 async def get_discussion_knowledge_tracing(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type not in ["discussion"]:
@@ -2161,6 +2198,7 @@ async def get_discussion_knowledge_tracing(session_id: str):
     }
 
 @app.get("/api/v1/explanation/knowledgetracing/{session_id}")
+@session_operation
 async def get_explanation_knowledge_tracing(session_id: str):
     session = session_manager.get_session(session_id)
     if not session or session.session_type not in ["explanation"]:
@@ -2182,6 +2220,7 @@ async def get_explanation_knowledge_tracing(session_id: str):
 
 # 更新讨论会话状态
 @app.post("/api/v1/discussion/updatestate", response_model=DiscussionSessionState)
+@session_operation
 async def update_discussion_session_state(request: DiscussionUpdateStateRequest):
     session = session_manager.get_session(request.session_id)
     if not session or session.session_type not in ["discussion"]:
@@ -2240,7 +2279,12 @@ class KnowledgeGraphResponse(BaseModel):
 
 # 用户相关api
 @app.get("/api/v1/user/knowledge-graph", response_model=KnowledgeGraphResponse)
+@session_operation
 async def get_knowledge_graph(user_id: str):
+    return await run_blocking(_get_knowledge_graph_sync, user_id)
+
+
+def _get_knowledge_graph_sync(user_id: str):
     # 该接口只应由已鉴权的 Java 网关调用。即使 Python 服务仅监听
     # loopback，也必须按认证主体隔离图数据，避免把所有用户的节点返回给前端。
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", user_id):

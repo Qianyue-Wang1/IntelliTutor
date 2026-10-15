@@ -6,6 +6,8 @@ import os
 import sys
 import json
 import threading
+from copy import deepcopy
+from common.state_storage import atomic_write_json, learner_state_operation
 import numpy as np
 from datetime import datetime
 
@@ -174,6 +176,7 @@ def is_mastery_outlier(new_value, history_values, z_threshold=2.0, min_samples=3
     return is_outlier, reason
 
 
+@learner_state_operation
 def knowledge_tracing(annotation_history, question, answer="", user_id="default"):
     """
     讨论完成后进行综合知识追踪评估：
@@ -355,7 +358,7 @@ def knowledge_tracing(annotation_history, question, answer="", user_id="default"
             "this_round_mastery": prob_mastery,
             "is_outlier": is_outlier,
             "outlier_reason": outlier_reason,
-            "annotation_history": annotation_history,
+            "annotation_history": deepcopy(annotation_history),
             "summary": exercise_summary.strip(),
             "analysis": exercise_analysis.strip(),
         }
@@ -391,7 +394,7 @@ def knowledge_tracing_async(annotation_history, question, user_id="default"):
     thread = threading.Thread(
         target=knowledge_tracing,
         kwargs={
-            "annotation_history": annotation_history,
+            "annotation_history": deepcopy(annotation_history),
             "question": question,
             "user_id": user_id,
         },
@@ -401,6 +404,7 @@ def knowledge_tracing_async(annotation_history, question, user_id="default"):
     print(f"[KT] 知识追踪后台线程已启动: user_id={user_id}")
 
 
+@learner_state_operation
 def update_user_profile(user_id, annotation_history):
     """
     根据完整轮次对话标注历史，调用大模型分析是否需要增删改用户画像，
@@ -477,8 +481,7 @@ def update_user_profile(user_id, annotation_history):
 
     # 写入文件
     os.makedirs(profile_dir, exist_ok=True)
-    with open(profile_path, "w", encoding="utf-8") as f:
-        json.dump(updated_profile, f, ensure_ascii=False, indent=2)
+    atomic_write_json(profile_path, updated_profile)
 
     print(f"[UserProfile] 用户 {user_id} 画像已更新: {profile_path}")
 
@@ -487,7 +490,7 @@ def update_user_profile_async(user_id, annotation_history):
     """异步执行用户画像更新（后台线程），不阻塞主请求。"""
     thread = threading.Thread(
         target=update_user_profile,
-        args=(user_id, annotation_history),
+        args=(user_id, deepcopy(annotation_history)),
         daemon=True
     )
     thread.start()

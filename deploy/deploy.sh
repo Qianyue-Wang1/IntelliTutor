@@ -14,8 +14,8 @@ if grep -q 'CHANGE_ME' .env; then
   exit 1
 fi
 
-if ! grep -Eq '^(OPENROUTER|MODELSCOPE|QWEN|SILICON)_API_KEY=.+$' .env; then
-  echo ".env 未配置任何 LLM API Key，推理功能无法使用。" >&2
+if ! grep -Eq '^VLLM_API_URL=https?://.+/v1/?$' .env || ! grep -Eq '^VLLM_MODEL=.+$' .env; then
+  echo ".env 必须配置 VLLM_API_URL（以 /v1 结尾）和 VLLM_MODEL。" >&2
   exit 1
 fi
 

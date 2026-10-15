@@ -1,3 +1,5 @@
+from common.state_storage import learner_state_operation
+from common.concurrency import run_blocking
 from datetime import datetime
 import re
 import random
@@ -437,7 +439,7 @@ class ExplanationSession(BaseSession):
 
     async def generate_personalized_options_async(self, analysis, operation, assessment_focus="", previous_assessments="暂无前序检验记录"):
         """异步生成个性化步骤选项，使用与同步版本一致的大模型配置。"""
-        common_mistakes_list, study_habits_list = self._option_adaptation_context()
+        common_mistakes_list, study_habits_list = await run_blocking(self._option_adaptation_context)
         common_mistakes = "\n".join(f"- {m}" for m in common_mistakes_list) if common_mistakes_list else "暂无记录"
         study_habits = "\n".join(f"- {h}" for h in study_habits_list) if study_habits_list else "暂无记录"
         prompt = OPTION_GENERATION_PERSONALIZED_PROMPT.format(
@@ -727,6 +729,7 @@ class ExplanationSession(BaseSession):
         _log_llm_response("explanation.generate_teacher_explanation", "large", response, session_id=self.session_id, user_id=self.user_id)
         return response if response else ""
     
+    @learner_state_operation
     def knowledge_tracing(self):
         from KT.ours.main import knowledge_tracing, retrospective_annotate, update_user_profile
         from common.learner_state import learner_state_key

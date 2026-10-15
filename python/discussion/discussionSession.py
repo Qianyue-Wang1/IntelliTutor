@@ -1,4 +1,5 @@
 from __future__ import annotations
+from common.state_storage import learner_state_operation
 import re
 import json
 import math
@@ -1793,6 +1794,7 @@ class DiscussionSystem(BaseSession):
 
         return "\n".join(weak_parts) if weak_parts else "暂无已识别的薄弱知识点"
 
+    @learner_state_operation
     def knowledge_tracing(self):
         from KT.ours.main import knowledge_tracing, retrospective_annotate, update_user_profile
         from common.learner_state import learner_state_key

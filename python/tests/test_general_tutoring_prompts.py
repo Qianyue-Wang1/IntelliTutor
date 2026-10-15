@@ -1,4 +1,3 @@
-import importlib.util
 from pathlib import Path
 import unittest
 
@@ -50,14 +49,6 @@ from common.prompt.zh.prompt import (
     IMAGE_INPUT_PROMPT,
     PARSE_USER_INTENT_PROMPT as COMMON_PARSE_USER_INTENT_PROMPT,
 )
-
-
-def load_dialog_kt_prompt_module():
-    prompt_path = Path(__file__).resolve().parents[1] / "KT" / "dialog-kt" / "prompt" / "prompting.py"
-    spec = importlib.util.spec_from_file_location("dialog_kt_prompt_contract", prompt_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def load_ours_annotate_source():
@@ -384,26 +375,6 @@ class GeneralKnowledgeContractTest(unittest.TestCase):
         self.assertIn('"study_habits"', UPDATE_USER_PROFILE_PROMPT)
         self.assertIn("通用学习标注专家", load_ours_annotate_source())
 
-    def test_dialog_kt_prompt_templates_are_domain_neutral(self):
-        dialog_prompt = load_dialog_kt_prompt_module()
-        prompts = (
-            dialog_prompt.ANNO_BASE_SYSTEM_PROMPT,
-            dialog_prompt.ANNO_CORRECTNESS_SYSTEM_PROMPT,
-            dialog_prompt.ANNO_KC_DOMAIN_SYSTEM_PROMPT,
-            dialog_prompt.ANNO_KC_CLUSTER_SYSTEM_PROMPT,
-            dialog_prompt.ANNO_KC_STANDARD_SYSTEM_PROMPT,
-            dialog_prompt.KT_SYSTEM_PROMPT,
-        )
-
-        for prompt in prompts:
-            self.assertIn("学习任务", prompt)
-            self.assertNotIn("数学老师", prompt)
-            self.assertNotIn("数学问题", prompt)
-
-        self.assertIn("true/false/na", dialog_prompt.ANNO_CORRECTNESS_SYSTEM_PROMPT)
-        self.assertIn("True", dialog_prompt.KT_SYSTEM_PROMPT)
-        self.assertIn("False", dialog_prompt.KT_SYSTEM_PROMPT)
-
     def test_input_prompts_accept_cross_domain_text_and_images(self):
         for prompt in (COMMON_PARSE_USER_INTENT_PROMPT, CHECK_INPUT_PROMPT, IMAGE_INPUT_PROMPT):
             self.assertIn("学习任务", prompt)
@@ -435,11 +406,11 @@ class GeneralKnowledgeContractTest(unittest.TestCase):
     def test_runtime_session_defaults_are_not_math_only(self):
         python_root = Path(__file__).resolve().parents[1]
         explanation_source = (python_root / "explanation" / "explanationSession.py").read_text(encoding="utf-8")
-        legacy_kt_source = (python_root / "KT" / "knowledge_tracing.py").read_text(encoding="utf-8")
+        runtime_kt_source = (python_root / "KT" / "ours" / "main.py").read_text(encoding="utf-8")
 
         self.assertIn("通用学习辅导者", explanation_source)
         self.assertNotIn("初中数学解题专家", explanation_source)
-        self.assertNotIn("学生正在尝试解决一个数学问题", legacy_kt_source)
+        self.assertNotIn("学生正在尝试解决一个数学问题", runtime_kt_source)
 
 
 if __name__ == "__main__":

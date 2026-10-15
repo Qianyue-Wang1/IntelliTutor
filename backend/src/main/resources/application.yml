@@ -87,7 +87,9 @@ spring:
     listener:
       simple:
         acknowledge-mode: manual           # 手动 ACK，保证消息不丢失
-        prefetch: 5                        # 每次预取 5 条，流量控制
+        concurrency: ${INFERENCE_CONCURRENCY:6}
+        max-concurrency: ${INFERENCE_MAX_CONCURRENCY:12}
+        prefetch: ${INFERENCE_PREFETCH:1}
         retry:
           enabled: true
           initial-interval: 3000ms

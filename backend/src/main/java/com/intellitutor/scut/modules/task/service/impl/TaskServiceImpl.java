@@ -3,6 +3,7 @@ package com.intellitutor.scut.modules.task.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellitutor.scut.common.constant.MqConstants;
+import com.intellitutor.scut.common.constant.InferenceLocks;
 import com.intellitutor.scut.common.exception.BusinessException;
 import com.intellitutor.scut.common.results.ResultCode;
 import com.intellitutor.scut.modules.session.dto.req.DiscussionFeedbackReq;
@@ -26,6 +27,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 异步推理任务发布、状态管理与轮询实现。
@@ -39,8 +41,8 @@ public class TaskServiceImpl implements TaskService {
     private static final String STATUS_PROCESSING = "processing";
     private static final String STATUS_SUCCESS = "success";
     private static final String STATUS_FAILED = "failed";
-    /** 覆盖最长 12 分钟的 Java→Python 请求，并额外保留 3 分钟防重入余量。 */
-    private static final int INFERENCE_LOCK_TTL_SECONDS = 900;
+    /** 覆盖队列等待、推理执行与快照恢复；锁归属使用唯一任务 ID。 */
+    private static final int INFERENCE_LOCK_TTL_SECONDS = InferenceLocks.TTL_SECONDS;
 
     private final TaskMapper taskMapper;
     private final RabbitTemplate rabbitTemplate;
@@ -165,15 +167,16 @@ public class TaskServiceImpl implements TaskService {
     private String doPublish(String sessionId, String taskType, String pythonEndpoint,
             String httpMethod, String routingKey, Object reqBody, String userId, int lockTtlSeconds) {
 
+        TaskRecord task = new TaskRecord();
+        task.setId(UUID.randomUUID().toString().replace("-", ""));
         String lockKey = MqConstants.INFERENCE_LOCK_PREFIX + sessionId;
         Boolean locked = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, taskType, Duration.ofSeconds(lockTtlSeconds));
+                .setIfAbsent(lockKey, task.getId(), Duration.ofSeconds(lockTtlSeconds));
         if (!Boolean.TRUE.equals(locked)) {
             throw new BusinessException(ResultCode.SESSION_STATE_CONFLICT,
                     "该会话存在进行中的任务，请稍后再试");
         }
 
-        TaskRecord task = new TaskRecord();
         task.setSessionId(sessionId);
         task.setTaskType(taskType);
         task.setStatus(STATUS_QUEUED);
@@ -210,7 +213,7 @@ public class TaskServiceImpl implements TaskService {
                             log.info("[Task] 事务提交后发布 MQ 任务 taskId={} type={} sessionId={}", task.getId(), taskType, sessionId);
                         } catch (RuntimeException error) {
                             markTaskFailed(task.getId(), "MQ 投递失败：" + error.getMessage());
-                            redisTemplate.delete(lockKey);
+                            InferenceLocks.release(redisTemplate, lockKey, task.getId());
                             log.error("[Task] 事务提交后 MQ 投递失败 taskId={} err={}", task.getId(), error.getMessage(), error);
                         }
                     }
@@ -218,7 +221,7 @@ public class TaskServiceImpl implements TaskService {
                     @Override
                     public void afterCompletion(int status) {
                         if (status != TransactionSynchronization.STATUS_COMMITTED) {
-                            redisTemplate.delete(lockKey);
+                            InferenceLocks.release(redisTemplate, lockKey, task.getId());
                             redisTemplate.delete(MqConstants.TASK_STATUS_PREFIX + task.getId());
                         }
                     }
@@ -242,7 +245,7 @@ public class TaskServiceImpl implements TaskService {
             throw new BusinessException(ResultCode.MQ_ERROR, "MQ 任务投递失败：" + e.getMessage(), e);
         } finally {
             if (!published) {
-                redisTemplate.delete(lockKey);
+                InferenceLocks.release(redisTemplate, lockKey, task.getId());
             }
         }
     }

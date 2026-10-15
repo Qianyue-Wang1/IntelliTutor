@@ -3,6 +3,7 @@ package com.intellitutor.scut.modules.task.mq;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellitutor.scut.common.constant.MqConstants;
+import com.intellitutor.scut.common.constant.InferenceLocks;
 import com.intellitutor.scut.common.exception.BusinessException;
 import com.intellitutor.scut.common.results.ResultCode;
 import com.intellitutor.scut.modules.session.entity.SessionRecord;
@@ -51,6 +52,10 @@ public class InferenceListener {
         String lockKey = MqConstants.INFERENCE_LOCK_PREFIX + msg.getSessionId();
         boolean lockReleased = false;
         try {
+            if (!msg.getTaskId().equals(redisTemplate.opsForValue().get(lockKey))) {
+                throw new BusinessException(ResultCode.SESSION_STATE_CONFLICT,
+                        "推理任务锁已失效，请重新提交任务");
+            }
             taskService.markTaskProcessing(msg.getTaskId());
 
             Map<String, Object> pyResult = callPython(msg);
@@ -69,7 +74,7 @@ public class InferenceListener {
             // Do not expose success while the predecessor still owns the session
             // lock, otherwise the follow-up request deterministically races with
             // this listener's finally block and is rejected as state conflict.
-            redisTemplate.delete(lockKey);
+            InferenceLocks.release(redisTemplate, lockKey, msg.getTaskId());
             lockReleased = true;
             taskService.markTaskSuccess(msg.getTaskId(), resultJson);
 
@@ -82,7 +87,7 @@ public class InferenceListener {
             markFailedAndNack(msg, channel, deliveryTag, e.getMessage(), e);
         } finally {
             if (!lockReleased) {
-                redisTemplate.delete(lockKey);
+                InferenceLocks.release(redisTemplate, lockKey, msg.getTaskId());
             }
         }
     }

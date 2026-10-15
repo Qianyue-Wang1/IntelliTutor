@@ -76,6 +76,7 @@ frontend/
 scripts/
 docs/*
 !docs/本地部署手册.md
+!docs/vLLM三卡部署与并发验证.md
 !docs/阿里云百炼API-Key申请与配置指南.md
 python/KT/dialog-kt/
 python/KT/llm-kt/
