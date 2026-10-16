@@ -2068,6 +2068,9 @@ async def submit_discussion_feedback(request: DiscussionFeedbackRequest):
         # 讨论完成后进行知识追踪评估：分析掌握度变化并更新知识图谱
         if discussSession.persist_learner_state:
             await run_blocking(discussSession.knowledge_tracing)
+
+    elif status == "retry_pending":
+        ai_message_content = ""
         
     else:
         ai_message_content = "请继续分析当前步骤，或者提出您的疑问。"

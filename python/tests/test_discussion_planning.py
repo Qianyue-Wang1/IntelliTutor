@@ -71,6 +71,7 @@ if "uvicorn" not in sys.modules:
         sys.modules["uvicorn"] = uvicorn_stub
 
 from discussion.discussionSession import (
+    END_DISCUSSION_AFTER_FAILURE_OPTION,
     SAFE_FALLBACK_REASON,
     DiscussionSystem,
     extract_objective_options,
@@ -140,6 +141,17 @@ class DiscussionPlanningModelTests(unittest.TestCase):
         )
 
         self.assertTrue(learner_questions_are_near_duplicates(current, next_prompt))
+
+    def test_same_question_template_is_allowed_for_a_different_objective(self):
+        current = "以下哪项最能体现聚类任务的直接目标？"
+        next_prompt = "以下哪项最能体现降维任务的直接目标？"
+
+        self.assertFalse(learner_questions_are_near_duplicates(
+            current,
+            next_prompt,
+            current_objective="聚类的任务目标",
+            next_objective="降维的任务目标",
+        ))
 
     def test_create_initial_plan_has_one_active_root_at_revision_zero(self):
         plan = create_initial_plan("识别题目目标", "题目要求我们求什么？")
@@ -2105,7 +2117,10 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
             result = session.process_feedback("正确答案", submission_type="option")
 
         self.assertIn("下一学习内容暂未准备好", result["feedback"])
-        self.assertEqual(["重试进入下一步"], session.current_options)
+        self.assertEqual(
+            ["重试进入下一步", END_DISCUSSION_AFTER_FAILURE_OPTION],
+            session.current_options,
+        )
         self.assertEqual(1, len(session.discussion_plan.root_node_ids))
 
     def test_next_step_failure_can_retry_without_regrading_the_answer(self):
@@ -2126,13 +2141,42 @@ class DiscussionFeedbackPipelineTests(unittest.TestCase):
             return_value=AnswerEvaluation(answer_performance="mastered", reason="回答正确"),
         ) as evaluate, patch.object(session, "call_llm", side_effect=[None, None, recovery]):
             failed = session.process_feedback("正确答案", submission_type="option")
-            self.assertEqual(["重试进入下一步"], session.current_options)
+            self.assertEqual(
+                ["重试进入下一步", END_DISCUSSION_AFTER_FAILURE_OPTION],
+                session.current_options,
+            )
             retried = session.process_feedback("重试进入下一步", submission_type="option")
 
         self.assertIn("下一学习内容暂未准备好", failed["feedback"])
         self.assertEqual("main_step", retried["status"])
         self.assertEqual("2", session.current_step_number)
         self.assertEqual(1, evaluate.call_count)
+
+    def test_next_step_failure_can_end_without_marking_remaining_goals_mastered(self):
+        session = self._session()
+        session.learning_path = [
+            {"step_number": 1, "title": "识别目标"},
+            {"step_number": 2, "title": "比较方法"},
+        ]
+
+        with patch.object(
+            session,
+            "evaluate_answer",
+            return_value=AnswerEvaluation(answer_performance="mastered", reason="回答正确"),
+        ), patch.object(session, "call_llm", side_effect=[None, None]):
+            session.process_feedback("正确答案", submission_type="option")
+            result = session.process_feedback(
+                END_DISCUSSION_AFTER_FAILURE_OPTION,
+                submission_type="option",
+            )
+
+        self.assertEqual("completed", result["status"])
+        self.assertTrue(session.is_complete)
+        self.assertIn("未呈现、未判分：比较方法", result["summary"])
+        self.assertEqual(
+            "system_generation_failure; remaining objectives not presented or graded",
+            session.discussion_plan.completion.reason,
+        )
 
     def test_user_question_uses_a_matching_understanding_check(self):
         session = self._session()

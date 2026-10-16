@@ -205,13 +205,22 @@ export default function DiscussionPage() {
           <MathContent content={message.content} /><time>{message.time ? new Date(message.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''}</time>
         </article>)}
           {!session.is_complete && Boolean(session.current_options?.length) && <div className="discussion-choices" aria-label="快捷作答">
-            {session.current_options!.length === 1 && session.current_options![0] === '重试进入下一步' ? <button
-              type="button"
-              className="button button--soft"
-              data-telemetry-id="discussion-next-step-retry"
-              disabled={sending}
-              onClick={() => void send('重试进入下一步')}
-            >重试进入下一步</button> : session.current_options!.filter(option => !['不知道', '我不知道'].includes(option.trim())).map((option, index) => <button
+            {session.current_options!.includes('重试进入下一步') ? <>
+              <button
+                type="button"
+                className="button button--soft"
+                data-telemetry-id="discussion-next-step-retry"
+                disabled={sending}
+                onClick={() => void send('重试进入下一步')}
+              >重试进入下一步</button>
+              {session.current_options!.includes('结束研讨并进入小后测（剩余目标未完成）') && <button
+                type="button"
+                className="button button--soft"
+                data-telemetry-id="discussion-next-step-end"
+                disabled={sending}
+                onClick={() => void send('结束研讨并进入小后测（剩余目标未完成）')}
+              >结束研讨并进入小后测</button>}
+            </> : session.current_options!.filter(option => !['不知道', '我不知道'].includes(option.trim())).map((option, index) => <button
               type="button"
               className="discussion-choice"
               disabled={sending}

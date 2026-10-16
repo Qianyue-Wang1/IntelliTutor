@@ -16,6 +16,7 @@ from discussion.planning import (
     PlanningContext,
     PlanningDecision,
     PlanningError,
+    PlanCompletion,
     TeachingRecovery,
     apply_decision,
     learner_prompt_violation,
@@ -154,21 +155,6 @@ def _normalize_objective_options(options: list[str]) -> list[str]:
     return normalized
 
 
-def _candidate_reuses_recent_mastered_answer(
-    answer: str,
-    previous_options: list[str],
-    candidate_options: list[str],
-) -> bool:
-    """Reject a next main question whose choices repeat the just-mastered answer."""
-    normalize = lambda value: re.sub(r"[\W_]+", "", str(value or ""), flags=re.UNICODE).lower()
-    normalized_answer = normalize(answer)
-    if not normalized_answer:
-        return False
-    normalized_previous = {normalize(option) for option in previous_options}
-    normalized_candidate = {normalize(option) for option in candidate_options}
-    return normalized_answer in normalized_previous and normalized_answer in normalized_candidate
-
-
 def _strip_json_fence(response) -> str:
     text = str(response or "").strip()
     fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL)
@@ -186,6 +172,7 @@ def _parse_teaching_recovery(response) -> TeachingRecovery:
 SAFE_FALLBACK_REASON = "规划模型连续返回无效结构，使用安全降级步骤"
 RECOVERY_REVISE_REASON = "安全降级节点再次规划失败，原位更新教学提示"
 RETRY_NEXT_STEP_OPTION = "重试进入下一步"
+END_DISCUSSION_AFTER_FAILURE_OPTION = "结束研讨并进入小后测（剩余目标未完成）"
 
 from discussion.prompt.zh.prompt import ANALYZE_PROMPT, INIT_STEP_PROMPT, HANDLE_USER_FEEDBACK, GENERATE_NEXT_SUBSTEP, JUDGE_END_STATUS, HANDLE_PARENT_STEP_STATUS, SUMMARY_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_PERSONALIZED, INSTRUCTION_PROMPT
 from common.knowledge_analysis import (
@@ -689,11 +676,12 @@ class DiscussionSystem(BaseSession):
             recovery_prompt_request += (
                 "\n上一题已确认的答案："
                 f"{context.explicit_feedback}。下一题必须考查当前目标的新内容，"
-                "不得把这个答案再次作为选项。"
+                "不得重复上一题的考查问题；可以把同一概念作为干扰选项。"
             )
             if attempt:
                 recovery_prompt_request += (
-                    "\n上一份输出重复了当前提示中的问题。请严格围绕当前目标生成新的讲解与检查题，"
+                    f"\n上一份输出未通过校验，原因：{last_error}。"
+                    "请针对该原因修正，严格围绕当前目标生成新的讲解与检查题，"
                     "不得重复当前提示中的问题或仅做同义改写。"
                 )
             response = self.call_llm(
@@ -717,14 +705,10 @@ class DiscussionSystem(BaseSession):
                 if learner_questions_are_near_duplicates(
                     context.active_prompt,
                     recovery_prompt,
+                    current_objective=context.active_objective,
+                    next_objective=target_objective,
                 ):
                     raise PlanningError("next discussion question repeats the current question")
-                if _candidate_reuses_recent_mastered_answer(
-                    context.explicit_feedback,
-                    self.current_options,
-                    recovery_options,
-                ):
-                    raise PlanningError("next discussion question reuses the just-mastered answer")
                 answer_key_violation = self._verify_generated_objective(
                     recovery_prompt,
                     recovery_options,
@@ -734,6 +718,10 @@ class DiscussionSystem(BaseSession):
                     raise PlanningError(answer_key_violation)
             except (ValidationError, ValueError, TypeError, PlanningError) as exc:
                 last_error = exc
+                logger.warning(
+                    "discussion next step rejected session_id={} objective={} attempt={} reason={}",
+                    self.session_id, target_objective, attempt + 1, exc,
+                )
                 continue
             return PlanningDecision(
                 answer_performance="mastered",
@@ -943,6 +931,57 @@ class DiscussionSystem(BaseSession):
             and user_feedback.strip() == RETRY_NEXT_STEP_OPTION
             and bool(self.pending_advance_feedback)
         )
+        if (
+            submission_type == "option"
+            and user_feedback.strip() == END_DISCUSSION_AFTER_FAILURE_OPTION
+            and self.pending_advance_feedback
+        ):
+            plan = self.discussion_plan.model_copy(deep=True)
+            node_map = {node.id: node for node in plan.nodes}
+            cursor = node_map.get(plan.active_node_id)
+            completed_at_turn = max(1, len(plan.turns))
+            while cursor is not None:
+                if cursor.status in {"active", "pending"}:
+                    cursor.status = "completed"
+                    cursor.outcome = "mastered"
+                    cursor.completed_at_turn = completed_at_turn
+                cursor = node_map.get(cursor.parent_id) if cursor.parent_id else None
+            plan.active_node_id = None
+            plan.completion = PlanCompletion(
+                status="completed",
+                reason="system_generation_failure; remaining objectives not presented or graded",
+            )
+            plan.revision += 1
+            self.discussion_plan = plan
+            projection = project_discussion_plan(plan)
+            self.steps = projection.discussion_tree
+            self.current_step = ""
+            self.current_step_number = ""
+            self.stack = []
+            self.current_options = []
+            self.current_correct_option = ""
+            self.pending_advance_feedback = ""
+            self.pending_advance_reason = ""
+            self.is_complete = True
+            remaining_objectives = [
+                str(step.get("title", "")).strip()
+                for step in self.learning_path[len(plan.root_node_ids):]
+                if str(step.get("title", "")).strip()
+            ]
+            not_presented = "、".join(remaining_objectives) or "后续学习目标"
+            summary = (
+                "## 问题总结\n\n"
+                "因系统连续无法生成并校验下一学习步骤，本轮研讨已提前结束。"
+                "已提交的作答记录保留；以下目标未呈现、未判分："
+                f"{not_presented}。请继续进入小后测。"
+            )
+            self.summary_text = summary
+            self.history.append({"role": "assistant", "content": summary})
+            return {
+                "status": "completed",
+                "feedback": "下一学习步骤连续生成失败，已按你的选择结束本轮；未展示的目标不计分。",
+                "summary": summary,
+            }
         if self.pending_user_question and submission_type == "option" and user_feedback.strip() == "理解了":
             return self._resume_after_user_question()
         if self.pending_user_question and submission_type == "option" and user_feedback.strip() == "还不理解":
@@ -992,6 +1031,13 @@ class DiscussionSystem(BaseSession):
             if next_step_failed
             else self._add_visible_answer_feedback(decision, evaluation.reason)
         )
+        if next_step_failed and retrying_advance:
+            self.current_options = [
+                RETRY_NEXT_STEP_OPTION,
+                END_DISCUSSION_AFTER_FAILURE_OPTION,
+            ]
+            self.current_correct_option = ""
+            return {"status": "retry_pending", "feedback": visible_feedback}
         next_plan = apply_decision(
             self.discussion_plan,
             decision,
@@ -1008,7 +1054,10 @@ class DiscussionSystem(BaseSession):
         if next_step_failed:
             self.pending_advance_feedback = answered_feedback
             self.pending_advance_reason = evaluation.reason
-            self.current_options = [RETRY_NEXT_STEP_OPTION]
+            self.current_options = [
+                RETRY_NEXT_STEP_OPTION,
+                END_DISCUSSION_AFTER_FAILURE_OPTION,
+            ]
             self.current_correct_option = ""
         elif decision.next_node is not None:
             self.current_options = _without_unknown_option(list(decision.next_node.options))
@@ -1066,6 +1115,8 @@ class DiscussionSystem(BaseSession):
 
         if visible_feedback:
             self.history.append({"role": "assistant", "content": visible_feedback})
+        if next_step_failed:
+            return {"status": "retry_pending", "feedback": visible_feedback}
         self.history.append({"role": "assistant", "content": projection.current_step})
         status = "main_step" if decision.action == "advance_main" else "sub_step"
         return {

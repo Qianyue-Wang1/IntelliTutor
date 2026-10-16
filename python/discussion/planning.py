@@ -38,7 +38,13 @@ _INTERNAL_COMMENTARY_MARKERS = (
 )
 
 
-def learner_questions_are_near_duplicates(current_prompt: str, next_prompt: str) -> bool:
+def learner_questions_are_near_duplicates(
+    current_prompt: str,
+    next_prompt: str,
+    *,
+    current_objective: str = "",
+    next_objective: str = "",
+) -> bool:
     """Return whether two learner-facing questions are effectively rewordings."""
     def last_question(text: str) -> str:
         lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
@@ -50,6 +56,22 @@ def learner_questions_are_near_duplicates(current_prompt: str, next_prompt: str)
     current = last_question(current_prompt)
     following = last_question(next_prompt)
     if not current or not following:
+        return False
+
+    def objective_markers(objective: str) -> list[str]:
+        parts = re.split(r"(?:的|与|和|及|、)", objective.strip())
+        ignored = {"学习", "知识点", "任务", "目标", "直接", "核心", "概念", "方法", "理解", "应用"}
+        return [part for part in parts if len(part) >= 2 and part not in ignored]
+
+    current_markers = objective_markers(current_objective)
+    next_markers = objective_markers(next_objective)
+    if (
+        current_objective.strip() != next_objective.strip()
+        and current_markers
+        and next_markers
+        and any(marker in current for marker in current_markers)
+        and any(marker in following for marker in next_markers)
+    ):
         return False
     return SequenceMatcher(None, current, following).ratio() >= 0.8
 
