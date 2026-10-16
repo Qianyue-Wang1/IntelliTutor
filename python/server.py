@@ -753,7 +753,10 @@ def _validate_generated_explanation_plan(explanation_session) -> None:
             raise LearningPathError(f"{step_name} 缺少完整内容：{'、'.join(missing)}")
 
     final_step_name = next(reversed(explanation_session.steps_data))
-    if not str(explanation_session.steps_data[final_step_name].get("操作总结", "")).strip():
+    if (
+        not explanation_session.experiment_run_id
+        and not str(explanation_session.steps_data[final_step_name].get("操作总结", "")).strip()
+    ):
         raise LearningPathError("最后一个子步骤缺少操作总结")
 
 
@@ -857,6 +860,8 @@ async def init_explanation_session(request: InitRequest):
         t0 = time.time()
         print(f"[INIT] 开始调用: 用户意图 → 解题步骤 (+{t0 - t_start:.2f}s)")
         prompt = ANALYZE_USER_INTENT_PROMPT.format(question=request.processedQuestion, user_input=parsed_content)
+        if request.experimentRunId:
+            prompt += "\n\n本次为实验逐步讲解：所有子步骤使用相同结构，不生成操作总结或知识总结；完成最后一个子步骤后直接进入本轮小后测。"
         if explanationSession.cross_session_enabled:
             await run_blocking(explanationSession.build_personalized_system_prompt)
         llm_response = await explanationSession.call_llm_async(prompt)
@@ -876,7 +881,7 @@ async def init_explanation_session(request: InitRequest):
             solving_steps_prompt += (
                 "\n\n本次为实验逐步讲解：请将主题拆成至少两个有递进关系的完整子步骤，"
                 "不要把多个独立知识点压缩进一个步骤。每一步填写分析与提示、具体操作，"
-                "最后一步必须包含操作总结。"
+                "所有子步骤使用相同结构，不生成操作总结或知识总结；完成最后一个子步骤后直接进入本轮小后测。"
             )
 
         # 并行提速（AsyncOpenAI 内置 async IO）
@@ -930,7 +935,7 @@ async def init_explanation_session(request: InitRequest):
                     retry_prompt = (
                         f"{solving_steps_prompt}\n\n上一次输出未通过完整性校验：{e}。"
                         "请重新生成完整学习计划，确保实验逐步讲解至少包含两个完整子步骤；"
-                        "每一步均填写分析与提示和具体操作，且最后一步包含操作总结。"
+                        "每一步均填写分析与提示和具体操作，且不生成操作总结或知识总结。"
                     )
                     solving_steps_response = await explanationSession.call_llm_async(retry_prompt)
                 else:
@@ -1363,6 +1368,10 @@ async def advance_explanation(request: AdvanceExplanationRequest):
         explanationSession.current_step += 1
         if explanationSession.current_step == explanationSession.step_count:
             explanationSession.in_summary = True
+            if explanationSession.experiment_run_id:
+                explanationSession.current_step = 0
+                if explanationSession.persist_learner_state:
+                    await run_blocking(explanationSession.knowledge_tracing)
 
     explanationSession.current_answer_result = None
     return await get_session_state(request.session_id)

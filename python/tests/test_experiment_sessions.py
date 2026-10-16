@@ -600,6 +600,44 @@ class ExperimentSessionContractTest(unittest.TestCase):
         self.assertTrue(session.in_summary)
         self.assertFalse(response["data"]["awaiting_next"])
 
+    def test_experiment_explanation_finishes_after_last_learning_step_without_summary(self):
+        session = self._ready_explanation_session()
+        session.experiment_run_id = "run-1"
+        asyncio.run(submit_answer(StepOption(session_id=session.session_id, option="A")))
+
+        response = asyncio.run(server_module.advance_explanation(
+            server_module.AdvanceExplanationRequest(session_id=session.session_id)
+        ))
+
+        self.assertEqual(0, session.current_step)
+        self.assertTrue(session.in_summary)
+        self.assertFalse(response["data"]["awaiting_next"])
+
+    def test_experiment_explanation_plan_does_not_require_operation_summary(self):
+        session = self._ready_explanation_session()
+        session.experiment_run_id = "run-1"
+        session.steps_dict = {"步骤1": "内容", "步骤2": "内容"}
+        session.steps_data = {
+            "步骤1": {
+                "学习主题": "聚类目标",
+                "本步知识点": "按相似性分组",
+                "承接关系": "建立任务背景",
+                "检验重点": "区分分组与预测",
+                "分析与提示": "讲解聚类目标",
+                "具体操作": "举例说明分组",
+            },
+            "步骤2": {
+                "学习主题": "聚类应用",
+                "本步知识点": "发现自然分组",
+                "承接关系": "使用前一步的任务定义",
+                "检验重点": "识别聚类应用",
+                "分析与提示": "讲解应用场景",
+                "具体操作": "判断应用场景",
+            },
+        }
+
+        server_module._validate_generated_explanation_plan(session)
+
     def test_full_explanation_missing_behavior_warns_and_continues(self):
         session = self._ready_explanation_session(personalized=True, adaptive=True)
 
