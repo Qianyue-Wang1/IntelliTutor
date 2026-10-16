@@ -742,6 +742,21 @@ async def _apply_explanation_knowledge_analysis(explanation_session, response: s
         )
 
 
+def _validate_generated_explanation_plan(explanation_session) -> None:
+    if explanation_session.experiment_run_id and len(explanation_session.steps_dict) < 2:
+        raise LearningPathError("实验逐步讲解至少需要两个完整子步骤")
+
+    required_fields = ("学习主题", "本步知识点", "承接关系", "检验重点", "分析与提示", "具体操作")
+    for step_name, step in explanation_session.steps_data.items():
+        missing = [field for field in required_fields if not str(step.get(field, "")).strip()]
+        if missing:
+            raise LearningPathError(f"{step_name} 缺少完整内容：{'、'.join(missing)}")
+
+    final_step_name = next(reversed(explanation_session.steps_data))
+    if not str(explanation_session.steps_data[final_step_name].get("操作总结", "")).strip():
+        raise LearningPathError("最后一个子步骤缺少操作总结")
+
+
 # 初始化API，返回问题相关知识点和解题步骤
 @app.post("/api/v1/explanation/init", response_model=InitState)
 @session_operation
@@ -857,6 +872,12 @@ async def init_explanation_session(request: InitRequest):
     else:     
         knowledge_point_prompt = EXTRACT_KNOWLEDGE_POINTS_PROMPT.format(question=request.processedQuestion)
         solving_steps_prompt = GENERATE_STEPS_PROMPT.format(question=request.processedQuestion)
+        if request.experimentRunId:
+            solving_steps_prompt += (
+                "\n\n本次为实验逐步讲解：请将主题拆成至少两个有递进关系的完整子步骤，"
+                "不要把多个独立知识点压缩进一个步骤。每一步填写分析与提示、具体操作，"
+                "最后一步必须包含操作总结。"
+            )
 
         # 并行提速（AsyncOpenAI 内置 async IO）
         if not explanationSession.cross_session_enabled:
@@ -885,11 +906,13 @@ async def init_explanation_session(request: InitRequest):
         
         # 处理解题步骤结果
         max_retries = 3
+        retry_prompt = solving_steps_prompt
         for attempt in range(1, max_retries + 1):
             if not solving_steps_response:
                 if attempt < max_retries:
                     print(f"[INIT] 步骤生成返回空，第 {attempt} 次重试...")
-                    solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
+                    retry_prompt = solving_steps_prompt
+                    solving_steps_response = await explanationSession.call_llm_async(retry_prompt)
                     continue
                 session_manager.delete_session(session.session_id)
                 raise HTTPException(status_code=500, detail="步骤解析失败")
@@ -897,13 +920,19 @@ async def init_explanation_session(request: InitRequest):
                 explanationSession.steps_dict = explanationSession.parse_solving_steps(solving_steps_response)
                 explanationSession.steps_data = explanationSession.parse_total_steps(explanationSession.steps_dict)
                 explanationSession.learning_path = parse_learning_path(explanationSession.steps_data)
+                _validate_generated_explanation_plan(explanationSession)
                 print(f"步骤解析完成（第 {attempt} 次尝试）")
                 break
             except (ValueError, LearningPathError) as e:
                 print(f"[INIT] parse_solving_steps 失败（第 {attempt} 次）: {e}")
                 if attempt < max_retries:
                     print(f"[INIT] 重新调用 LLM 生成步骤，第 {attempt + 1} 次尝试...")
-                    solving_steps_response = await explanationSession.call_llm_async(solving_steps_prompt)
+                    retry_prompt = (
+                        f"{solving_steps_prompt}\n\n上一次输出未通过完整性校验：{e}。"
+                        "请重新生成完整学习计划，确保实验逐步讲解至少包含两个完整子步骤；"
+                        "每一步均填写分析与提示和具体操作，且最后一步包含操作总结。"
+                    )
+                    solving_steps_response = await explanationSession.call_llm_async(retry_prompt)
                 else:
                     session_manager.delete_session(session.session_id)
                     raise HTTPException(status_code=500, detail=f"步骤解析失败（已重试 {max_retries} 次）: {e}")

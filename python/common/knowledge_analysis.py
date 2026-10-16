@@ -31,10 +31,45 @@ def _clean_text(value: Any) -> str:
     return re.sub(r"\s+", " ", value).strip() if isinstance(value, str) else ""
 
 
+def _escape_latex_backslashes(content: str) -> str:
+    """Escape LaTeX command slashes that an LLM emitted unescaped in JSON strings."""
+    result = []
+    in_string = False
+    index = 0
+    while index < len(content):
+        char = content[index]
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            index += 1
+            continue
+        if in_string and char == "\\":
+            next_char = content[index + 1] if index + 1 < len(content) else ""
+            if next_char in '"\\/':
+                result.extend((char, next_char))
+                index += 2
+                continue
+            if next_char in "bfnrt" and (index + 2 == len(content) or not content[index + 2].isalpha()):
+                result.extend((char, next_char))
+                index += 2
+                continue
+            if next_char == "u" and re.fullmatch(r"[0-9a-fA-F]{4}", content[index + 2:index + 6]):
+                result.append(content[index:index + 6])
+                index += 6
+                continue
+            result.append("\\\\")
+            index += 1
+            continue
+        result.append(char)
+        index += 1
+    return "".join(result)
+
+
 def _extract_json_object(content: str) -> Dict[str, Any]:
     if not isinstance(content, str) or not content.strip():
         raise KnowledgeAnalysisError(["LLM 返回为空"])
 
+    content = _escape_latex_backslashes(content)
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", content):
         try:
