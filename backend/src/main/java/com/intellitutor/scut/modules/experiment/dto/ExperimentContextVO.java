@@ -14,6 +14,7 @@ public record ExperimentContextVO(
         String participationStatus,
         String groupCode,
         Integer round,
+        String roundTopic,
         String tutorMode,
         String sessionId,
         String attemptId,

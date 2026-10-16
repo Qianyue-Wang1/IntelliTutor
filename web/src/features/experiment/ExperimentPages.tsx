@@ -241,7 +241,7 @@ export function CompletionCredentialPage() {
 
 export function TutorModePage() {
   useExperimentTelemetry('TUTOR_MODE')
-  const { refresh } = useExperiment()
+  const { context, refresh } = useExperiment()
   const navigate = useNavigate()
   const notice = useNotice()
   const [working, setWorking] = useState<string | null>(null)
@@ -255,6 +255,7 @@ export function TutorModePage() {
     catch (error) { notice(error instanceof Error ? error.message : 'Tutor 启动失败', 'error'); setWorking(null) }
   }
   return <div className="experiment-narrow"><ExperimentHeader label="本轮学习方式" title="选择这一轮的辅导方式" />
+    {context?.round_topic && <section className="card experiment-card"><span className="eyebrow">本轮主题</span><p>{context.round_topic}</p></section>}
     <p className="mode-lock-note"><LockKeyhole size={17} />选择会与本轮会话同时锁定，刷新或重新登录不会改变。</p>
     <div className="experiment-mode-grid"><button className="card experiment-mode" disabled={working !== null} onClick={() => void choose('explanation')}><FileCheck2 /><strong>逐步讲解</strong><span>按关键步骤练习并即时检查理解</span>{working === 'explanation' && <LoaderCircle className="spin" />}</button>
       <button className="card experiment-mode" disabled={working !== null} onClick={() => void choose('discussion')}><MessageCircleMore /><strong>启发研讨</strong><span>通过连续对话共同推演解题路径</span>{working === 'discussion' && <LoaderCircle className="spin" />}</button></div>

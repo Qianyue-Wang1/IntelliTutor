@@ -282,9 +282,29 @@ class DiscussionSystem(BaseSession):
         if self.current_correct_option:
             if feedback.strip() == self.current_correct_option:
                 return AnswerEvaluation(answer_performance="mastered", reason="回答正确")
+            from discussion.prompt.zh.prompt import DISCUSSION_INCORRECT_ANSWER_FEEDBACK_PROMPT
+
+            try:
+                explanation = self.call_llm(
+                    DISCUSSION_INCORRECT_ANSWER_FEEDBACK_PROMPT.format(
+                        objective=active.objective,
+                        question=self.question,
+                        prompt=active.prompt,
+                        options=json.dumps(self.current_options, ensure_ascii=False),
+                        selected_option=feedback.strip(),
+                        correct_option=self.current_correct_option,
+                    ),
+                    model_type="large",
+                    if_system_prompt=False,
+                ).strip()
+            except Exception:
+                logger.exception("discussion incorrect-answer feedback generation failed")
+                explanation = ""
+            if not explanation:
+                explanation = "这个选项没有对应题目要求判断的关键特征，请对照本步讲解重新判断。"
             return AnswerEvaluation(
                 answer_performance="not_mastered",
-                reason="所选选项不是本题正确答案。",
+                reason=explanation,
             )
         from discussion.prompt.zh.prompt import EVALUATE_DISCUSSION_ANSWER_PROMPT
 
@@ -867,12 +887,19 @@ class DiscussionSystem(BaseSession):
         self,
         decision: PlanningDecision,
         evaluation_reason: str,
+        selected_answer: str = "",
     ) -> Optional[str]:
-        return {
-            "mastered": "回答正确。",
-            "not_mastered": f"回答错误：{evaluation_reason.rstrip('。')}。",
-            "off_topic": "这次回答没有对应当前问题。",
-        }.get(decision.answer_performance)
+        if decision.answer_performance == "mastered":
+            return "回答正确。"
+        if decision.answer_performance == "not_mastered":
+            wrong_answer_feedback = f"你选择的“{selected_answer}”不正确。" if selected_answer else "回答错误。"
+            explanation = evaluation_reason.strip()
+            if explanation and explanation[-1] not in "。！？!?.":
+                explanation += "。"
+            return f"回答错误：{wrong_answer_feedback}{explanation}"
+        if decision.answer_performance == "off_topic":
+            return "这次回答没有对应当前问题。"
+        return None
 
     def _answer_user_question(self, user_question: str, behavior_data=None) -> dict:
         projection = project_discussion_plan(self.discussion_plan)
@@ -1015,6 +1042,14 @@ class DiscussionSystem(BaseSession):
                 decision = self._teach_current_objective(context)
             elif evaluation.answer_performance == "mastered" and getattr(context, "teaching_plan", []):
                 decision = self._advance_after_mastered(context)
+            elif evaluation.answer_performance == "not_mastered":
+                decision = PlanningDecision(
+                    answer_performance="not_mastered",
+                    action="continue_current",
+                    reason="答错后说明错误选项并保留原题供重答",
+                    recovery_options=list(self.current_options),
+                    recovery_correct_option=self.current_correct_option or None,
+                )
             else:
                 decision = self.plan_next_action(context)
         except PlanningError as exc:
@@ -1029,7 +1064,7 @@ class DiscussionSystem(BaseSession):
             if strategy_recovery
             else "回答正确。下一学习内容暂未准备好，请重试。"
             if next_step_failed
-            else self._add_visible_answer_feedback(decision, evaluation.reason)
+            else self._add_visible_answer_feedback(decision, evaluation.reason, user_feedback)
         )
         if next_step_failed and retrying_advance:
             self.current_options = [

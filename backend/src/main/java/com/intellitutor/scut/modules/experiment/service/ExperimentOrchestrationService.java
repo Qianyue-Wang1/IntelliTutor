@@ -36,16 +36,17 @@ public class ExperimentOrchestrationService {
     public ExperimentContextVO context(String userId) {
         if (!features.isExperimentModeEnabled()) {
             return new ExperimentContextVO(false, false, null, null, null, null, null,
-                    null, 0, null, null, null, null, 0, "/", List.of("FREE_TUTOR"), null, null, now());
+                    null, 0, null, null, null, null, null, 0, "/", List.of("FREE_TUTOR"), null, null, now());
         }
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT a.*,e.name experiment_name,e.current_stage_code," +
-                "s.id stage_id,s.stage_type,s.lecture_markdown FROM t_student_experiment_assignment a " +
+                "s.id stage_id,s.stage_type,s.lecture_markdown,cv.package_json::text package_json FROM t_student_experiment_assignment a " +
                 "JOIN t_experiment e ON e.id=a.experiment_id LEFT JOIN t_experiment_stage s " +
-                "ON s.experiment_id=e.id AND s.stage_code=e.current_stage_code WHERE a.user_id=? " +
+                "ON s.experiment_id=e.id AND s.stage_code=e.current_stage_code LEFT JOIN t_experiment_content_version cv " +
+                "ON cv.experiment_id=e.id AND cv.version=COALESCE(a.content_version,e.content_version) WHERE a.user_id=? " +
                 "ORDER BY a.created_at DESC LIMIT 1", userId);
         if (rows.isEmpty()) {
             return new ExperimentContextVO(true, false, null, null, null, null, null,
-                    null, 0, null, null, null, null, 0, "/login", List.of(), "账号尚未分配实验", null, now());
+                    null, 0, null, null, null, null, null, 0, "/login", List.of(), "账号尚未分配实验", null, now());
         }
         Map<String, Object> row = rows.get(0);
         String assignmentId = string(row, "id");
@@ -126,7 +127,7 @@ public class ExperimentOrchestrationService {
             stageContent = objectMapper.valueToTree(Map.of("markdown", row.get("lecture_markdown")));
         }
         return new ExperimentContextVO(true, true, string(row, "experiment_id"), string(row, "experiment_name"),
-                global, stateName, participation, group, round, resource.mode, resource.sessionId,
+                global, stateName, participation, group, round, roundTopic(string(row, "package_json"), round), resource.mode, resource.sessionId,
                 resource.attemptId, resource.deadline, number(row, "state_version"), route, actions, waiting, stageContent, now());
     }
 
@@ -311,6 +312,17 @@ public class ExperimentOrchestrationService {
                 (rs, n) -> rs.getString(1), experimentId, code);
         if (ids.isEmpty()) throw new BusinessException(ResultCode.NOT_FOUND, "实验阶段配置不存在: " + code);
         return ids.get(0);
+    }
+
+    private String roundTopic(String packageJson, int round) {
+        if (packageJson == null || packageJson.isBlank() || round < 1) return null;
+        try {
+            JsonNode rounds = objectMapper.readTree(packageJson).path("rounds");
+            JsonNode topic = rounds.path(round - 1).path("topic");
+            return topic.isTextual() && !topic.asText().isBlank() ? topic.asText() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static String string(Map<String, Object> row, String key) {

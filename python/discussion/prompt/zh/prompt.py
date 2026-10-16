@@ -292,6 +292,18 @@ EVALUATE_DISCUSSION_ANSWER_PROMPT = """
 """
 
 
+DISCUSSION_INCORRECT_ANSWER_FEEDBACK_PROMPT = """
+你是启发研讨教师。学习者刚选错了客观题，请围绕学习者所选的错误选项，简要说明它为什么不符合题意或判断依据。不要直接告诉学习者正确答案是什么；保留当前题目，不要生成新题。只输出一到两句面向学习者的中文解释，不要输出 Markdown 或 JSON。
+
+学习目标：{objective}
+题目：{question}
+当前步骤讲解与题干：{prompt}
+选项：{options}
+学习者所选错误选项：{selected_option}
+教师核验用正确选项（用于理解错误原因，不要直接告知学习者）：{correct_option}
+"""
+
+
 PLAN_DISCUSSION_NEXT_ACTION_PROMPT = """
 你是启发研讨的动态规划器。根据给定且已经过权限裁剪的上下文，只输出纯 JSON，不输出 Markdown。
 

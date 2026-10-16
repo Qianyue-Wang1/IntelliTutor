@@ -1366,12 +1366,13 @@ async def advance_explanation(request: AdvanceExplanationRequest):
             await run_blocking(explanationSession.knowledge_tracing)
     else:
         explanationSession.current_step += 1
-        if explanationSession.current_step == explanationSession.step_count:
+        if explanationSession.experiment_run_id and explanationSession.current_step > explanationSession.step_count:
             explanationSession.in_summary = True
-            if explanationSession.experiment_run_id:
-                explanationSession.current_step = 0
-                if explanationSession.persist_learner_state:
-                    await run_blocking(explanationSession.knowledge_tracing)
+            explanationSession.current_step = 0
+            if explanationSession.persist_learner_state:
+                await run_blocking(explanationSession.knowledge_tracing)
+        elif not explanationSession.experiment_run_id and explanationSession.current_step == explanationSession.step_count:
+            explanationSession.in_summary = True
 
     explanationSession.current_answer_result = None
     return await get_session_state(request.session_id)

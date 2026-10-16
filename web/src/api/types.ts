@@ -229,6 +229,7 @@ export interface ExperimentContext {
   participation_status?: string | null
   group_code?: string | null
   round?: number
+  round_topic?: string | null
   tutor_mode?: string | null
   session_id?: string | null
   attempt_id?: string | null
