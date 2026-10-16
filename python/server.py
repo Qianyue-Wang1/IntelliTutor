@@ -787,6 +787,21 @@ async def init_explanation_session(request: InitRequest):
     explanationSession.force_coverage_on_final_turn = bool(request.forceCoverageOnFinalTurn)
     explanationSession.learner_state_status = "PENDING" if explanationSession.persist_learner_state else "NOT_APPLICABLE"
 
+    experiment_step_guidance = ""
+    if request.experimentRunId:
+        experiment_guidance_lines = ["本次为实验逐步讲解。"]
+        if request.topic:
+            experiment_guidance_lines.append(f"本轮教学主题：{request.topic}")
+        if request.objectives:
+            experiment_guidance_lines.append("本轮学习目标：\n" + "\n".join(f"- {objective}" for objective in request.objectives))
+        experiment_guidance_lines.extend([
+            "请围绕本轮主题和学习目标规划子步骤，并在步骤主题与检验重点中覆盖这些目标。",
+            "通常安排 3～5 个有递进关系的完整子步骤，具体数量按主题复杂度决定；每一步聚焦一个可独立讲解和检验的核心目标。",
+            "紧密相关的概念可以放在同一步；不要把多个彼此独立的学习目标压缩进同一步，也不要为了凑步骤数拆分同一目标。",
+            "每一步填写分析与提示、具体操作，所有子步骤使用相同结构，不生成操作总结或知识总结；完成最后一个子步骤后直接进入本轮小后测。",
+        ])
+        experiment_step_guidance = "\n\n" + "\n".join(experiment_guidance_lines)
+
     # 如果有用户输入  
     if request.userInput:
         knowledge_point_prompt = EXTRACT_KNOWLEDGE_POINTS_PROMPT.format(question=request.processedQuestion)
@@ -860,8 +875,7 @@ async def init_explanation_session(request: InitRequest):
         t0 = time.time()
         print(f"[INIT] 开始调用: 用户意图 → 解题步骤 (+{t0 - t_start:.2f}s)")
         prompt = ANALYZE_USER_INTENT_PROMPT.format(question=request.processedQuestion, user_input=parsed_content)
-        if request.experimentRunId:
-            prompt += "\n\n本次为实验逐步讲解：所有子步骤使用相同结构，不生成操作总结或知识总结；完成最后一个子步骤后直接进入本轮小后测。"
+        prompt += experiment_step_guidance
         if explanationSession.cross_session_enabled:
             await run_blocking(explanationSession.build_personalized_system_prompt)
         llm_response = await explanationSession.call_llm_async(prompt)
@@ -877,12 +891,7 @@ async def init_explanation_session(request: InitRequest):
     else:     
         knowledge_point_prompt = EXTRACT_KNOWLEDGE_POINTS_PROMPT.format(question=request.processedQuestion)
         solving_steps_prompt = GENERATE_STEPS_PROMPT.format(question=request.processedQuestion)
-        if request.experimentRunId:
-            solving_steps_prompt += (
-                "\n\n本次为实验逐步讲解：请将主题拆成至少两个有递进关系的完整子步骤，"
-                "不要把多个独立知识点压缩进一个步骤。每一步填写分析与提示、具体操作，"
-                "所有子步骤使用相同结构，不生成操作总结或知识总结；完成最后一个子步骤后直接进入本轮小后测。"
-            )
+        solving_steps_prompt += experiment_step_guidance
 
         # 并行提速（AsyncOpenAI 内置 async IO）
         if not explanationSession.cross_session_enabled:
